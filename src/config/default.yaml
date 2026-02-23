@@ -1,0 +1,59 @@
+# 陪诊服务沙盘模拟 - 默认配置
+
+# 时间参数
+total_days: 90
+time_step: day
+work_hours: [8, 18]
+
+# 需求侧参数
+dau_base: 2000000
+exposure_rate: 0.05
+click_rate: 0.02
+consult_rate: 0.30
+order_rate: 0.20
+price_mean: 200.0
+price_std: 50.0
+repurchase_prob: 0.30
+repurchase_cycle_days: 30
+demand_volatility: 0.15
+
+# 供给侧参数
+initial_escorts: 15
+weekly_recruit: 5
+recruit_cost: 500.0
+training_days: 7
+training_pass_rate: 0.80
+daily_order_limit: 3
+monthly_churn_rate: 0.15
+escort_commission: 0.70
+
+# 服务参数
+service_duration_mean: 3.0
+service_duration_std: 1.0
+service_success_rate: 0.95
+satisfaction_mean: 4.5
+satisfaction_std: 0.3
+
+covered_hospitals:
+  - 协和医院
+  - 301医院
+  - 北医三院
+  - 阜外医院
+  - 天坛医院
+
+disease_types:
+  - 糖尿病
+  - 高血压
+  - 心脏病
+  - 慢性肾病
+  - 呼吸系统疾病
+  - 其他
+
+# LLM 参数
+llm_provider: anthropic
+llm_model: claude-sonnet-4-5-20250929
+llm_event_probability: 0.10
+enable_llm: true
+
+# 其他
+random_seed: 42

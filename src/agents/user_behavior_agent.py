@@ -1,0 +1,285 @@
+"""
+用户行为Agent - 模拟真实用户行为
+"""
+
+import random
+from typing import Dict, List, Any, Optional
+from datetime import datetime, timedelta
+
+from .base_agent import BaseAgent, AgentMessage, AgentType, MessageType
+
+
+class UserBehaviorAgent(BaseAgent):
+    """
+    用户行为Agent
+
+    职责：
+    1. 模拟用户下单行为（基于真实数据）
+    2. 模拟用户复购决策（首单复购率13.5%）
+    3. 模拟用户流失（30天留存率45%）
+    4. 模拟用户评价行为
+    5. 模拟用户对价格、服务质量的敏感度
+    """
+
+    def __init__(self):
+        super().__init__(agent_id="user_behavior_agent", agent_type=AgentType.USER_BEHAVIOR)
+
+        # 基于修正后的参数
+        self.first_order_repeat_rate = 0.135  # 首单复购率13.5%
+        self.regular_repeat_rate = 0.30  # 老客户复购率30%
+        self.designated_repeat_rate = 0.82  # 指定陪诊师复购率82%
+
+        # 用户留存率（基于外部研究数据）
+        self.retention_30_day = 0.45  # 30天留存率45%
+        self.retention_90_day = 0.36  # 90天留存率36%
+
+        # 用户池
+        self.state.memory['active_users'] = []  # 活跃用户
+        self.state.memory['churned_users'] = []  # 流失用户
+        self.state.memory['user_history'] = {}  # 用户历史记录
+
+    def process_message(self, message: AgentMessage) -> Optional[AgentMessage]:
+        """处理消息"""
+        if message.message_type == MessageType.EVENT:
+            event_type = message.content.get('event_type')
+
+            if event_type == 'order_completed':
+                # 订单完成后，更新用户状态
+                return self._handle_order_completed(message.content)
+
+            elif event_type == 'price_change':
+                # 价格变化，影响用户下单意愿
+                return self._handle_price_change(message.content)
+
+            elif event_type == 'marketing_campaign':
+                # 营销活动，影响用户行为
+                return self._handle_marketing_campaign(message.content)
+
+        return None
+
+    def take_action(self, simulation_state: Dict[str, Any]) -> List[AgentMessage]:
+        """执行用户行为模拟"""
+        messages = []
+        current_day = simulation_state.get('current_day', 0)
+
+        # 1. 模拟新用户下单
+        new_orders = self._simulate_new_user_orders(simulation_state)
+        if new_orders:
+            messages.append(self.send_message(
+                receiver="coordinator",
+                message_type=MessageType.EVENT,
+                content={
+                    'event_type': 'new_orders',
+                    'orders': new_orders,
+                    'day': current_day
+                }
+            ))
+
+        # 2. 模拟复购用户下单
+        repurchase_orders = self._simulate_repurchase_orders(simulation_state)
+        if repurchase_orders:
+            messages.append(self.send_message(
+                receiver="coordinator",
+                message_type=MessageType.EVENT,
+                content={
+                    'event_type': 'repurchase_orders',
+                    'orders': repurchase_orders,
+                    'day': current_day
+                }
+            ))
+
+        # 3. 模拟用户流失
+        churned_users = self._simulate_user_churn(current_day)
+        if churned_users:
+            messages.append(self.send_message(
+                receiver="monitoring_agent",
+                message_type=MessageType.ALERT,
+                content={
+                    'alert_type': 'user_churn',
+                    'churned_count': len(churned_users),
+                    'day': current_day
+                },
+                priority=5
+            ))
+
+        # 4. 更新指标
+        self.update_metrics({
+            'active_users': len(self.state.memory['active_users']),
+            'churned_users': len(self.state.memory['churned_users']),
+            'new_orders': len(new_orders) if new_orders else 0,
+            'repurchase_orders': len(repurchase_orders) if repurchase_orders else 0,
+        })
+
+        return messages
+
+    def _simulate_new_user_orders(self, simulation_state: Dict[str, Any]) -> List[Dict]:
+        """模拟新用户下单"""
+        # 基于市场规模和曝光率计算新用户数
+        market_size = simulation_state.get('market_size', 1000)
+        exposure_rate = simulation_state.get('exposure_rate', 0.03)
+        conversion_rate = simulation_state.get('conversion_rate', 0.15)
+        current_day = simulation_state.get('current_day', 0)
+
+        # 计算新用户订单数
+        potential_users = int(market_size * exposure_rate)
+        new_order_count = int(potential_users * conversion_rate * random.uniform(0.8, 1.2))
+
+        orders = []
+        for _ in range(new_order_count):
+            user_id = f"user_{len(self.state.memory['active_users']) + 1}"
+            order = {
+                'user_id': user_id,
+                'is_first_order': True,
+                'price_sensitivity': random.uniform(0.3, 0.8),
+                'quality_expectation': random.uniform(4.0, 5.0),
+                'day': current_day
+            }
+            orders.append(order)
+
+            # 添加到活跃用户池
+            self.state.memory['active_users'].append(user_id)
+            self.state.memory['user_history'][user_id] = {
+                'first_order_day': current_day,  # 修复：使用模拟天数而不是系统时间
+                'total_orders': 1,
+                'last_order_day': current_day,
+                'ratings': [],
+                'designated_escort': None
+            }
+
+        return orders
+
+    def _simulate_repurchase_orders(self, simulation_state: Dict[str, Any]) -> List[Dict]:
+        """模拟复购订单"""
+        orders = []
+        current_day = simulation_state.get('current_day', 0)
+
+        for user_id in self.state.memory['active_users']:
+            user_history = self.state.memory['user_history'].get(user_id, {})
+
+            # 判断是否复购
+            if self._should_repurchase(user_history, current_day):
+                order = {
+                    'user_id': user_id,
+                    'is_first_order': False,
+                    'is_designated': user_history.get('designated_escort') is not None,
+                    'designated_escort': user_history.get('designated_escort'),
+                    'day': current_day
+                }
+                orders.append(order)
+
+                # 更新用户历史
+                user_history['total_orders'] += 1
+                user_history['last_order_day'] = current_day
+
+        return orders
+
+    def _should_repurchase(self, user_history: Dict, current_day: int) -> bool:
+        """判断用户是否会复购"""
+        total_orders = user_history.get('total_orders', 0)
+        designated_escort = user_history.get('designated_escort')
+        avg_rating = sum(user_history.get('ratings', [])) / len(user_history.get('ratings', [1])) if user_history.get('ratings') else 4.5
+
+        # 首单用户
+        if total_orders == 1:
+            # 基于评分调整复购率
+            if avg_rating >= 4.9:
+                repeat_rate = self.first_order_repeat_rate * 1.5
+            elif avg_rating >= 4.5:
+                repeat_rate = self.first_order_repeat_rate
+            else:
+                repeat_rate = self.first_order_repeat_rate * 0.5
+
+            return random.random() < repeat_rate / 30  # 转换为日复购概率
+
+        # 指定陪诊师用户
+        elif designated_escort:
+            return random.random() < self.designated_repeat_rate / 30
+
+        # 老客户
+        else:
+            return random.random() < self.regular_repeat_rate / 30
+
+    def _simulate_user_churn(self, current_day: int) -> List[str]:
+        """模拟用户流失 (按周留存模型)"""
+        churned_users = []
+
+        for user_id in list(self.state.memory['active_users']):
+            user_history = self.state.memory['user_history'].get(user_id, {})
+            first_order_day = user_history.get('first_order_day', 0)
+
+            # 计算用户活跃天数 (模拟时间)
+            days_since_first_order = current_day - first_order_day
+
+            # 基于周期的流失概率模型
+            # 1. 第1周(高危期): 累计流失约30% -> 日流失率约 5%
+            # 2. 第2-4周(动荡期): 累计流失到55% -> 日流失率约 2.1%
+            # 3. 第2-3个月(稳定期): 累计流失到64% -> 日流失率约 0.4%
+            # 4. 3个月后(长尾期): 极低流失 -> 日流失率约 0.2%
+
+            if days_since_first_order <= 7:
+                churn_probability = 0.05
+            elif days_since_first_order <= 30:
+                churn_probability = 0.021
+            elif days_since_first_order <= 90:
+                churn_probability = 0.004
+            else:
+                churn_probability = 0.002
+
+            # 评分低的用户更容易流失
+            avg_rating = sum(user_history.get('ratings', [])) / len(user_history.get('ratings', [1])) if user_history.get('ratings') else 4.5
+            if avg_rating < 4.0:
+                churn_probability *= 2.0
+
+            if random.random() < churn_probability:
+                churned_users.append(user_id)
+                self.state.memory['active_users'].remove(user_id)
+                self.state.memory['churned_users'].append(user_id)
+
+        return churned_users
+
+    def _handle_order_completed(self, content: Dict) -> Optional[AgentMessage]:
+        """处理订单完成事件"""
+        user_id = content.get('user_id')
+        rating = content.get('rating', 4.5)
+        escort_id = content.get('escort_id')
+
+        if user_id in self.state.memory['user_history']:
+            user_history = self.state.memory['user_history'][user_id]
+            user_history['ratings'].append(rating)
+
+            # 如果评分高，可能指定陪诊师
+            if rating >= 4.8 and random.random() < 0.7:
+                user_history['designated_escort'] = escort_id
+
+        return None
+
+    def _handle_price_change(self, content: Dict) -> Optional[AgentMessage]:
+        """处理价格变化"""
+        price_change_rate = content.get('price_change_rate', 0)
+
+        # 价格上涨会降低转化率和复购率
+        if price_change_rate > 0:
+            self.first_order_repeat_rate *= (1 - price_change_rate * 0.5)
+            self.regular_repeat_rate *= (1 - price_change_rate * 0.3)
+
+        return self.send_message(
+            receiver="monitoring_agent",
+            message_type=MessageType.ALERT,
+            content={
+                'alert_type': 'user_behavior_change',
+                'reason': 'price_change',
+                'impact': f"复购率预计下降{price_change_rate * 30:.1f}%"
+            }
+        )
+
+    def _handle_marketing_campaign(self, content: Dict) -> Optional[AgentMessage]:
+        """处理营销活动"""
+        campaign_type = content.get('campaign_type')
+        intensity = content.get('intensity', 1.0)
+
+        # 营销活动可以提升复购率
+        if campaign_type == 'retention':
+            self.first_order_repeat_rate *= (1 + intensity * 0.2)
+            self.regular_repeat_rate *= (1 + intensity * 0.15)
+
+        return None
