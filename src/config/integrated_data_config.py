@@ -278,14 +278,32 @@ class IntegratedDataConfig:
     # - 陪诊服务估算：月度流失率25-35%（介于医疗和App之间）
     # 置信度：⭐⭐⭐⭐⭐（基于医疗行业标准数据）
 
-    # NPS口碑传播参数（基于金融行业和医疗行业基准）
+    # NPS口碑传播参数（基于金融行业和医疗行业基准，按用户类型分层）
     nps_parameters: Dict[str, Dict] = field(default_factory=lambda: {
         "nps_score": {
-            "promoters_ratio": 0.175,  # 推荐者占比15-20%（取中值17.5%）
+            "promoters_ratio": 0.175,  # 推荐者占比15-20%（取中值17.5%）- 全局加权平均
             "passives_ratio": 0.425,  # 被动者占比40-45%
             "detractors_ratio": 0.40,  # 批评者占比35-45%
-            "nps": -0.225,  # NPS = 17.5% - 40% = -22.5%（可能为负！）
+            "nps": -0.225,  # NPS = 17.5% - 40% = -22.5%（全局加权平均）
             "description": "医疗陪诊NPS可能为负（隐私敏感，推荐意愿低）"
+        },
+        "nps_by_segment": {
+            "elderly_self": {
+                "ratio": 0.20,  # 占比20%
+                "promoters_ratio": 0.12,  # 推荐者12%
+                "passives_ratio": 0.45,  # 被动者45%
+                "detractors_ratio": 0.43,  # 批评者43%
+                "nps": -0.31,  # NPS = 12% - 43% = -31% (约-30%)
+                "description": "老年自主用户：NPS -30%，推荐意愿极低"
+            },
+            "children_purchase": {
+                "ratio": 0.80,  # 占比80%
+                "promoters_ratio": 0.37,  # 推荐者37%
+                "passives_ratio": 0.36,  # 被动者36%
+                "detractors_ratio": 0.27,  # 批评者27%
+                "nps": 0.10,  # NPS = 37% - 27% = +10%
+                "description": "子女代购用户：NPS +10%，推荐意愿较高"
+            }
         },
         "referral_effectiveness": {
             "doctor_referral_rate": 0.45,  # 医生推荐→患者就诊率40-50%
@@ -415,9 +433,9 @@ class IntegratedDataConfig:
     # 节假日影响因素
     holiday_factors: Dict[str, Dict] = field(default_factory=lambda: {
         "spring_festival": {
-            "multiplier": 0.5,  # 需求-50%
+            "multiplier": 0.3,  # 需求-70%（80%订单由子女代购，春节子女在家，陪诊需求暴跌）
             "duration_days": 7,  # 春节7天
-            "reason": "医院门诊量大幅下降"
+            "reason": "医院门诊量大幅下降 + 子女在家无需代购陪诊"
         },
         "national_day": {
             "multiplier": 0.6,  # 需求-40%

@@ -35,7 +35,8 @@ class MarketDynamicsAgent(BaseAgent):
         self.holiday_factors = {
             'normal': 1.0,
             'weekend': 0.8,  # 周末需求下降
-            'holiday': 0.6,  # 节假日需求大幅下降
+            'holiday': 0.6,  # 一般节假日需求大幅下降
+            'spring_festival': 0.3,  # 春节需求-70%（80%订单由子女代购，春节子女在家）
         }
 
     def process_message(self, message: AgentMessage) -> Optional[AgentMessage]:

@@ -48,6 +48,10 @@ class User:
     location_lon: float = 116.4074
     location_district: str = "朝阳"  # 所在区域
 
+    # 增强版需求生成器扩展字段
+    income_level: str = "中等收入"   # 收入等级
+    channel_type: str = "online"     # 获客渠道类型
+
     # 指定陪诊师相关字段（新增）
     designated_escort_id: Optional[str] = None  # 用户指定的陪诊师ID
     history_escort_ids: List[str] = field(default_factory=list)  # 历史服务过的陪诊师ID列表
@@ -130,6 +134,10 @@ class Order:
     is_success: bool = False
 
     cancel_reason: Optional[str] = None
+
+    # 获客渠道信息（增强版需求生成器使用）
+    acquisition_channel: Optional[str] = None
+    acquisition_cost: float = 0.0
 
     # 匹配类型追踪（新增）
     match_type: str = "normal"  # "designated"/"history"/"normal"

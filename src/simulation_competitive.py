@@ -20,7 +20,7 @@ from .llm.client import LLMClient
 class CompetitiveSimulation:
     """竞争版沙盘模拟引擎 - 包含市场竞争"""
 
-    def __init__(self, config: SimulationConfig, beijing_data: BeijingRealDataConfig = None):
+    def __init__(self, config: SimulationConfig, beijing_data: Optional[BeijingRealDataConfig] = None):
         self.config = config
         self.config.validate()
 
@@ -53,7 +53,7 @@ class CompetitiveSimulation:
     def run(self, verbose: bool = True) -> SimulationResult:
         """运行模拟"""
         self.console.print(f"\n[bold cyan]🚀 开始竞争版模拟 - 共 {self.config.total_days} 天[/bold cyan]")
-        self.console.print("[dim]包含市场竞争：滴滴30%、美团25%、支付宝20%、其他25%[/dim]\n")
+        self.console.print("[dim]包含市场竞争：医院自营40%、个人陪诊师35%、滴滴15%、其他平台10%[/dim]\n")
 
         with Progress(
             SpinnerColumn(),
@@ -149,7 +149,7 @@ class CompetitiveSimulation:
             "market_share": self.competition_sim.get_our_market_share(),
         }
 
-        event = self.llm_client.generate_event(state)
+        event = self.llm_client.generate_event(state) if self.llm_client else None
         if event:
             self.console.print(f"\n[yellow]📢 突发事件（第{day}天）：{event.get('description', '')}[/yellow]\n")
 

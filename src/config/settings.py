@@ -99,6 +99,9 @@ class SimulationConfig:
     llm_api_key: str = ""  # 从环境变量读取
     llm_event_probability: float = 0.10  # 每日触发 LLM 事件的概率
 
+    # ========== 招募参数 ==========
+    recruit_decay_factor: float = 0.3  # 招募难度递增系数
+
     # ========== 其他参数 ==========
     random_seed: int = 42  # 随机种子
     enable_llm: bool = True  # 是否启用 LLM 功能

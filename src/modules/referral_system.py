@@ -41,11 +41,25 @@ class ReferralSystem:
     - 患者推荐→新患者下单率：5-10%
     """
 
-    # NPS 分类比例（来自 integrated_data_config.py）
+    # NPS 分类比例（全局默认，来自 integrated_data_config.py）
     NPS_DISTRIBUTION = {
         UserNPSCategory.PROMOTER: 0.175,   # 推荐者17.5%
         UserNPSCategory.PASSIVE: 0.425,    # 被动者42.5%
         UserNPSCategory.DETRACTOR: 0.40,   # 批评者40%
+    }
+
+    # NPS 分层参数（按用户类型）
+    NPS_BY_SEGMENT = {
+        "elderly_self": {
+            UserNPSCategory.PROMOTER: 0.12,   # 推荐者12%
+            UserNPSCategory.PASSIVE: 0.45,    # 被动者45%
+            UserNPSCategory.DETRACTOR: 0.43,  # 批评者43%
+        },
+        "children_purchase": {
+            UserNPSCategory.PROMOTER: 0.37,   # 推荐者37%
+            UserNPSCategory.PASSIVE: 0.36,    # 被动者36%
+            UserNPSCategory.DETRACTOR: 0.27,  # 批评者27%
+        },
     }
 
     # 推荐转化率（患者推荐→新患者下单率5-10%）
@@ -73,17 +87,25 @@ class ReferralSystem:
         self.referral_incentive_enabled: bool = False
         self.incentive_multiplier: float = 1.0  # 激励倍数
 
-    def classify_user_nps(self, user_id: str, rating: float) -> UserNPSCategory:
+        # 负面口碑累计流失
+        self.total_lost_potential_users: int = 0
+
+    def classify_user_nps(self, user_id: str, rating: float, is_child_purchase: bool = False) -> UserNPSCategory:
         """
-        根据评分对用户进行 NPS 分类
+        根据评分和用户类型对用户进行 NPS 分类
 
         Args:
             user_id: 用户ID
             rating: 用户对服务的评分（1-5分）
+            is_child_purchase: 是否为子女代购用户
 
         Returns:
             UserNPSCategory: NPS 分类
         """
+        # 根据用户类型选择对应的 NPS 分布参数
+        segment = "children_purchase" if is_child_purchase else "elderly_self"
+        nps_dist = self.NPS_BY_SEGMENT[segment]
+
         # 将5分制转换为10分制
         score_10 = rating * 2
 
@@ -203,7 +225,21 @@ class ReferralSystem:
             "total_organic_new_users": self.total_organic_new_users,
             "organic_referral_ratio": self.ORGANIC_REFERRAL_RATIO,
             "referral_incentive_enabled": self.referral_incentive_enabled,
+            "total_lost_potential_users": self.total_lost_potential_users,
             # 健康指标
             "is_nps_positive": self.current_nps > 0,
             "nps_target": 0,  # 目标：从-22.5%提升至0
         }
+
+    def simulate_negative_word_of_mouth(self, detractors: list) -> int:
+        """模拟批评者的负面口碑传播，返回流失的潜在用户数"""
+        lost_potential_users = 0
+        for user in detractors:
+            # 批评者会主动劝阻3-5个潜在用户
+            influenced_count = random.randint(3, 5)
+            for _ in range(influenced_count):
+                # 50%概率放弃使用
+                if random.random() < 0.5:
+                    lost_potential_users += 1
+        self.total_lost_potential_users += lost_potential_users
+        return lost_potential_users

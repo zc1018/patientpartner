@@ -19,9 +19,7 @@ beijing_aging_population:
     description: 80岁及以上人口
     population: 687000
 beijing_dau: 1500000
-beijing_dau_confidence_interval: !!python/tuple
-- 1200000
-- 2000000
+beijing_dau_confidence_interval: [1200000, 2000000]
 beijing_market_2025: 3500000000
 beijing_market_2030: 12000000000
 click_rate: 0.02
@@ -245,8 +243,8 @@ holiday_factors:
     reason: 医院门诊量下降
   spring_festival:
     duration_days: 7
-    multiplier: 0.5
-    reason: 医院门诊量大幅下降
+    multiplier: 0.3
+    reason: 医院门诊量大幅下降 + 子女在家无需代购陪诊
   weekend:
     multiplier: 0.8
     reason: 医院周末门诊量下降

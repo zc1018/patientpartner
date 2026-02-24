@@ -48,7 +48,7 @@ class SupplySimulator:
         """每日更新供给状态"""
         # 1. 招募新人
         if day % 7 == 0 and day > 0:  # 每周招募
-            self._recruit_new_escorts()
+            self._recruit_new_escorts(day)
 
         # 2. 培训完成判定
         self._process_training_completion(day)
@@ -60,9 +60,15 @@ class SupplySimulator:
         # 4. 重置每日接单计数
         self._reset_daily_capacity()
 
-    def _recruit_new_escorts(self):
-        """招募新陪诊员"""
-        for _ in range(self.config.weekly_recruit):
+    def _recruit_new_escorts(self, day: int = 0):
+        """招募新陪诊员（随时间递减的招募率）"""
+        # 随时间递减的招募率
+        week_number = day // 7
+        decay = 1 - (self.config.recruit_decay_factor * week_number / 52)
+        decay = max(decay, 0.4)  # 最低保留40%招募能力
+        actual_recruit = int(self.config.weekly_recruit * decay)
+
+        for _ in range(actual_recruit):
             escort = Escort(
                 status=EscortStatus.TRAINING,
                 join_date=datetime.now(),

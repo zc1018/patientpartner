@@ -9,6 +9,38 @@ from datetime import datetime, timedelta
 from .base_agent import BaseAgent, AgentMessage, AgentType, MessageType
 
 
+# 用户分层模型
+USER_SEGMENTS = {
+    "high_freq_chronic": {
+        "name": "高频慢病用户",
+        "ratio": 0.15,
+        "avg_orders_per_month": 4,
+        "price_sensitivity": 0.3,
+        "retention_rate_30d": 0.80,
+        "ltv_annual": 9600,
+        "scenarios": ["慢病复查", "专家门诊"]
+    },
+    "low_freq_occasional": {
+        "name": "低频偶尔用户",
+        "ratio": 0.60,
+        "avg_orders_per_month": 0.5,
+        "price_sensitivity": 0.7,
+        "retention_rate_30d": 0.40,
+        "ltv_annual": 1200,
+        "scenarios": ["偶尔就医", "体检"]
+    },
+    "one_time_surgery": {
+        "name": "一次性手术用户",
+        "ratio": 0.25,
+        "avg_orders_per_month": 0.1,
+        "price_sensitivity": 0.5,
+        "retention_rate_30d": 0.10,
+        "ltv_annual": 240,
+        "scenarios": ["手术陪同", "住院陪护"]
+    }
+}
+
+
 class UserBehaviorAgent(BaseAgent):
     """
     用户行为Agent
@@ -32,6 +64,10 @@ class UserBehaviorAgent(BaseAgent):
         # 用户留存率（基于外部研究数据）
         self.retention_30_day = 0.45  # 30天留存率45%
         self.retention_90_day = 0.36  # 90天留存率36%
+
+        # 用户分层比例（用于随机分配）
+        self.segment_keys = list(USER_SEGMENTS.keys())
+        self.segment_weights = [USER_SEGMENTS[k]["ratio"] for k in self.segment_keys]
 
         # 用户池
         self.state.memory['active_users'] = []  # 活跃用户
@@ -127,23 +163,31 @@ class UserBehaviorAgent(BaseAgent):
         orders = []
         for _ in range(new_order_count):
             user_id = f"user_{len(self.state.memory['active_users']) + 1}"
+
+            # 根据分层比例随机分配用户类型
+            segment_key = random.choices(self.segment_keys, weights=self.segment_weights, k=1)[0]
+            segment = USER_SEGMENTS[segment_key]
+
             order = {
                 'user_id': user_id,
                 'is_first_order': True,
-                'price_sensitivity': random.uniform(0.3, 0.8),
+                'price_sensitivity': segment["price_sensitivity"],
                 'quality_expectation': random.uniform(4.0, 5.0),
-                'day': current_day
+                'day': current_day,
+                'segment': segment_key,
             }
             orders.append(order)
 
             # 添加到活跃用户池
             self.state.memory['active_users'].append(user_id)
             self.state.memory['user_history'][user_id] = {
-                'first_order_day': current_day,  # 修复：使用模拟天数而不是系统时间
+                'first_order_day': current_day,
                 'total_orders': 1,
                 'last_order_day': current_day,
                 'ratings': [],
-                'designated_escort': None
+                'designated_escort': None,
+                'segment': segment_key,
+                'retention_rate_30d': segment["retention_rate_30d"],
             }
 
         return orders
@@ -200,7 +244,7 @@ class UserBehaviorAgent(BaseAgent):
             return random.random() < self.regular_repeat_rate / 30
 
     def _simulate_user_churn(self, current_day: int) -> List[str]:
-        """模拟用户流失 (按周留存模型)"""
+        """模拟用户流失 (按用户分层 + 周留存模型)"""
         churned_users = []
 
         for user_id in list(self.state.memory['active_users']):
@@ -210,20 +254,20 @@ class UserBehaviorAgent(BaseAgent):
             # 计算用户活跃天数 (模拟时间)
             days_since_first_order = current_day - first_order_day
 
-            # 基于周期的流失概率模型
-            # 1. 第1周(高危期): 累计流失约30% -> 日流失率约 5%
-            # 2. 第2-4周(动荡期): 累计流失到55% -> 日流失率约 2.1%
-            # 3. 第2-3个月(稳定期): 累计流失到64% -> 日流失率约 0.4%
-            # 4. 3个月后(长尾期): 极低流失 -> 日流失率约 0.2%
+            # 获取用户分层的30天留存率，用于调整流失概率
+            segment_retention = user_history.get('retention_rate_30d', 0.45)
+            # 留存率越高，流失概率越低（基准0.45对应原始流失率）
+            retention_modifier = 0.45 / max(segment_retention, 0.01)
 
+            # 基于周期的流失概率模型（乘以分层修正系数）
             if days_since_first_order <= 7:
-                churn_probability = 0.05
+                churn_probability = 0.05 * retention_modifier
             elif days_since_first_order <= 30:
-                churn_probability = 0.021
+                churn_probability = 0.021 * retention_modifier
             elif days_since_first_order <= 90:
-                churn_probability = 0.004
+                churn_probability = 0.004 * retention_modifier
             else:
-                churn_probability = 0.002
+                churn_probability = 0.002 * retention_modifier
 
             # 评分低的用户更容易流失
             avg_rating = sum(user_history.get('ratings', [])) / len(user_history.get('ratings', [1])) if user_history.get('ratings') else 4.5

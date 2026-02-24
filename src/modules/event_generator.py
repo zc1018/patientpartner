@@ -7,6 +7,45 @@ import pandas as pd
 from dataclasses import dataclass
 
 
+# 政策风险事件定义
+POLICY_RISK_EVENTS = [
+    {
+        "name": "医院禁入政策",
+        "event_type": "policy_risk",
+        "probability_per_day": 0.02 / 365,  # 年概率2%
+        "demand_impact": -0.50,
+        "duration_days": 90,
+        "description": "某三甲医院禁止平台陪诊师进入，需要重新谈判准入"
+    },
+    {
+        "name": "持证上岗要求",
+        "event_type": "policy_risk",
+        "probability_per_day": 0.01 / 365,
+        "demand_impact": -0.30,
+        "supply_impact": -0.30,  # 70%陪诊师需要重新培训
+        "duration_days": 180,
+        "description": "政策要求陪诊师持有护理证，供给侧受冲击"
+    },
+    {
+        "name": "患者隐私泄露事件",
+        "event_type": "brand_crisis",
+        "probability_per_day": 0.005 / 365,
+        "demand_impact": -0.60,
+        "nps_impact": -20,  # NPS额外下降20点
+        "duration_days": 60,
+        "description": "陪诊师泄露患者隐私，导致品牌危机和监管处罚"
+    },
+    {
+        "name": "医保报销陪诊费",
+        "event_type": "policy_benefit",
+        "probability_per_day": 0.002 / 365,
+        "demand_impact": +0.80,
+        "duration_days": 365,
+        "description": "政策允许医保报销陪诊费，需求爆发式增长"
+    }
+]
+
+
 @dataclass
 class BusinessEvent:
     """业务事件"""
@@ -23,6 +62,59 @@ class EventGenerator:
 
     def __init__(self, df: pd.DataFrame):
         self.df = df
+        self.active_policy_events: List[Dict] = []  # 当前生效的政策事件
+
+    def generate_policy_risk_events(self, day: int) -> List[BusinessEvent]:
+        """生成政策风险事件（每日调用）"""
+        events = []
+
+        # 清理过期的政策事件
+        self.active_policy_events = [
+            e for e in self.active_policy_events
+            if day < e["start_day"] + e["duration_days"]
+        ]
+
+        # 检查是否触发新的政策事件
+        for policy_event in POLICY_RISK_EVENTS:
+            if random.random() < policy_event["probability_per_day"]:
+                # 避免同类型事件重复触发
+                active_names = [e["name"] for e in self.active_policy_events]
+                if policy_event["name"] in active_names:
+                    continue
+
+                active_event = {**policy_event, "start_day": day}
+                self.active_policy_events.append(active_event)
+
+                impact = "负面" if policy_event["demand_impact"] < 0 else "正面"
+                events.append(BusinessEvent(
+                    day=day,
+                    category="政策事件",
+                    title=policy_event["name"],
+                    description=policy_event["description"],
+                    impact=impact,
+                    metrics={
+                        "需求影响": policy_event["demand_impact"],
+                        "持续天数": policy_event["duration_days"],
+                    }
+                ))
+
+        return events
+
+    def get_active_policy_demand_modifier(self, day: int) -> float:
+        """获取当前生效的政策事件对需求的累计影响系数"""
+        modifier = 0.0
+        for event in self.active_policy_events:
+            if day < event["start_day"] + event["duration_days"]:
+                modifier += event.get("demand_impact", 0)
+        return modifier
+
+    def get_active_policy_supply_modifier(self, day: int) -> float:
+        """获取当前生效的政策事件对供给的累计影响系数"""
+        modifier = 0.0
+        for event in self.active_policy_events:
+            if day < event["start_day"] + event["duration_days"]:
+                modifier += event.get("supply_impact", 0)
+        return modifier
 
     def generate_weekly_events(self, start_day: int, end_day: int) -> List[BusinessEvent]:
         """生成一周内的关键事件"""
@@ -60,7 +152,7 @@ class EventGenerator:
 
             if rating_change > 0.2:
                 # 评分显著提升
-                best_day = week_data['avg_rating'].idxmax()
+                best_day: int = week_data['avg_rating'].idxmax()  # type: ignore[assignment]
                 best_rating = week_data.loc[best_day, 'avg_rating']
 
                 events.append(BusinessEvent(
@@ -78,7 +170,7 @@ class EventGenerator:
                 ))
             elif rating_change < -0.2:
                 # 评分下降
-                worst_day = week_data['avg_rating'].idxmin()
+                worst_day: int = week_data['avg_rating'].idxmin()  # type: ignore[assignment]
                 worst_rating = week_data.loc[worst_day, 'avg_rating']
 
                 events.append(BusinessEvent(
@@ -97,8 +189,8 @@ class EventGenerator:
 
         # 检查完成率突破
         completion_rates = week_data['completion_rate']
-        if completion_rates.max() > 0.80 and completion_rates.iloc[0] < 0.70:
-            breakthrough_day = completion_rates.idxmax()
+        if completion_rates.max() > 0.80 and completion_rates.iloc[0] < 0.70:  # type: ignore[operator]
+            breakthrough_day: int = completion_rates.idxmax()  # type: ignore[assignment]
             breakthrough_rate = completion_rates.loc[breakthrough_day]
 
             events.append(BusinessEvent(
@@ -127,8 +219,8 @@ class EventGenerator:
             max_orders = daily_orders.max()
             avg_orders = daily_orders.mean()
 
-            if max_orders > avg_orders * 1.5:
-                peak_day = daily_orders.idxmax()
+            if max_orders > avg_orders * 1.5:  # type: ignore[operator]
+                peak_day: int = daily_orders.idxmax()  # type: ignore[assignment]
                 peak_orders = daily_orders.loc[peak_day]
 
                 # 判断是哪天（周几）
@@ -155,7 +247,7 @@ class EventGenerator:
         cumulative_gmv = week_data['gmv'].sum()
         if 900_000 < cumulative_gmv < 1_100_000:
             events.append(BusinessEvent(
-                day=week_data.index[-1],
+                day=int(week_data.index[-1]),  # type: ignore[arg-type]
                 category="市场事件",
                 title="周 GMV 突破百万",
                 description=f"本周 GMV 达到 ¥{cumulative_gmv:,.0f}，首次突破百万大关。"
@@ -179,7 +271,7 @@ class EventGenerator:
         escorts_change = week_data['total_escorts'].iloc[-1] - week_data['total_escorts'].iloc[0]
         if escorts_change >= 8:
             events.append(BusinessEvent(
-                day=week_data.index[-1],
+                day=int(week_data.index[-1]),  # type: ignore[arg-type]
                 category="运营事件",
                 title="陪诊员团队扩充",
                 description=f"本周成功招募 {int(escorts_change)} 名新陪诊员，团队规模达到 {int(week_data['total_escorts'].iloc[-1])} 人。"
@@ -196,7 +288,7 @@ class EventGenerator:
         # 检查等待订单堆积
         avg_waiting = week_data['waiting_orders'].mean()
         if avg_waiting > 500:
-            peak_waiting_day = week_data['waiting_orders'].idxmax()
+            peak_waiting_day: int = week_data['waiting_orders'].idxmax()  # type: ignore[assignment]
             peak_waiting = week_data.loc[peak_waiting_day, 'waiting_orders']
 
             events.append(BusinessEvent(
@@ -219,7 +311,7 @@ class EventGenerator:
             completion_improvement = week_data['completion_rate'].iloc[-1] - week_data['completion_rate'].iloc[0]
             if completion_improvement > 0.15:
                 events.append(BusinessEvent(
-                    day=week_data.index[-1],
+                    day=int(week_data.index[-1]),  # type: ignore[arg-type]
                     category="运营事件",
                     title="供需平衡显著改善",
                     description=f"本周完成率从 {week_data['completion_rate'].iloc[0]:.1%} 提升至 "
@@ -249,7 +341,7 @@ class EventGenerator:
 
                 if repurchase_rate > 0.20:
                     events.append(BusinessEvent(
-                        day=week_data.index[-1],
+                        day=int(week_data.index[-1]),  # type: ignore[arg-type]
                         category="用户事件",
                         title="复购率创新高",
                         description=f"本周复购订单达到 {int(repurchase_orders)} 单，复购率达到 {repurchase_rate:.1%}，"
@@ -269,7 +361,7 @@ class EventGenerator:
 
             if new_orders > 100:
                 events.append(BusinessEvent(
-                    day=week_data.index[-1],
+                    day=int(week_data.index[-1]),  # type: ignore[arg-type]
                     category="用户事件",
                     title="新用户快速增长",
                     description=f"本周新增用户 {int(new_orders)} 人，主要来源于：1）滴滴 App 首页推荐（45%）；"
@@ -300,6 +392,7 @@ class EventGenerator:
             "服务事件": 2,
             "运营事件": 2,
             "用户事件": 1,
+            "政策事件": 4,  # 政策事件影响最大
         }
         importance += category_weights.get(event.category, 1)
 

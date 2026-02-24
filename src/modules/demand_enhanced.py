@@ -1,14 +1,20 @@
+# ============================================================================
+# 增强版需求生成器 - 尚未集成到主流程
+# 基础版见 demand.py（当前主版本，被 simulation/simulation.py 使用）
+# 版本关系：demand.py 是 v1.0（漏斗模型），本文件是 v2.0（多渠道+真实数据）
+# 集成方式：未来可在 simulation/ 下新建 EnhancedSimulation 子类使用本模块
+# ============================================================================
 """
 增强版需求生成模块 - 基于北京真实数据
 """
 import random
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import List, Dict, Optional
 import numpy as np
 
 from ..config.settings import SimulationConfig
 from ..config.beijing_real_data import BeijingRealDataConfig
-from ..models.entities import User, Order
+from ..models.entities import User, Order, OrderStatus
 
 
 class EnhancedDemandGenerator:
@@ -157,7 +163,7 @@ class EnhancedDemandGenerator:
         # 基于高评分用户的推荐
         high_rating_users = [
             user for user in self.repurchase_pool.values()
-            if hasattr(user, 'last_rating') and user.last_rating >= 4.5
+            if user.last_escort_rating is not None and user.last_escort_rating >= 4.5
         ]
 
         orders = []
@@ -194,9 +200,9 @@ class EnhancedDemandGenerator:
     def _create_user_with_real_data(
         self,
         channel_type: str = "online",
-        preferred_hospital: str = None,
-        district: str = None,
-        referrer: User = None
+        preferred_hospital: Optional[str] = None,
+        district: Optional[str] = None,
+        referrer: Optional[User] = None
     ) -> User:
         """创建用户 - 基于真实数据"""
 
@@ -237,12 +243,10 @@ class EnhancedDemandGenerator:
             price_sensitivity=self._calculate_price_sensitivity(user_district, income_level),
             is_repurchase=False,
             total_orders=1,
+            location_district=user_district,
+            income_level=income_level,
+            channel_type=channel_type,
         )
-
-        # 存储额外信息
-        user.district = user_district
-        user.income_level = income_level
-        user.channel_type = channel_type
 
         return user
 
@@ -250,7 +254,7 @@ class EnhancedDemandGenerator:
         self,
         user: User,
         day: int,
-        channel: Dict = None
+        channel: Optional[Dict] = None
     ) -> Order:
         """创建订单 - 基于真实定价（动态定价）"""
 
@@ -260,9 +264,9 @@ class EnhancedDemandGenerator:
 
         # 2. 区域调整（付费能力）
         district_data = self.beijing_data.district_payment_ability.get(
-            getattr(user, 'district', '朝阳')
+            user.location_district
         )
-        price_multiplier = district_data.get("price_multiplier", 1.0)
+        price_multiplier = district_data.get("price_multiplier", 1.0) if district_data else 1.0
 
         # 3. 时间段调整（高峰期加价）
         time_multiplier = self._get_time_multiplier(user.service_period)
@@ -274,16 +278,29 @@ class EnhancedDemandGenerator:
         income_data = self.beijing_data.elderly_income_distribution.get(
             getattr(user, 'income_level', '中等收入')
         )
-        max_price = income_data.get("max_price", 250)
+        max_price = income_data.get("max_price", 250) if income_data else 250
 
         # 6. 计算最终价格
         price = base_price * price_multiplier * time_multiplier * disease_multiplier
-        price = min(price, max_price)  # 不超过最高接受价格
 
         # 7. 添加随机波动（±10%）
         volatility = np.random.uniform(-0.1, 0.1)
         price = price * (1 + volatility)
         price = max(80, price)  # 最低价格 80 元
+
+        # 8. 价格超预算检查：超过用户最高接受价格则订单流失
+        if price > max_price:
+            order = Order(
+                user=user,
+                price=round(price, 2),
+                created_at=datetime.now() + timedelta(days=day),
+            )
+            order.status = OrderStatus.CANCELLED
+            order.cancel_reason = "价格超预算"
+            if channel:
+                order.acquisition_channel = channel["name"]
+                order.acquisition_cost = channel.get("cost_per_order", 0)
+            return order
 
         order = Order(
             user=user,
@@ -399,8 +416,8 @@ class EnhancedDemandGenerator:
 
         return orders
 
-    def add_to_repurchase_pool(self, user: User, rating: float = None):
+    def add_to_repurchase_pool(self, user: User, rating: Optional[float] = None):
         """将用户加入复购池"""
-        if rating:
-            user.last_rating = rating
+        if rating is not None:
+            user.last_escort_rating = rating
         self.repurchase_pool[user.id] = user

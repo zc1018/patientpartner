@@ -1,3 +1,9 @@
+# ============================================================================
+# 增强版匹配引擎 - 尚未集成到主流程
+# 基础版见 matching.py（当前主版本，被 simulation/simulation.py 使用）
+# 版本关系：matching.py 是 v1.0（指定陪诊师优先），本文件是 v2.0（+地理距离+时间约束）
+# 集成方式：未来可在 simulation/ 下新建 EnhancedSimulation 子类使用本模块
+# ============================================================================
 """
 增强版匹配引擎 - 支持地理距离和时间约束
 """
@@ -22,12 +28,14 @@ class EnhancedMatchingEngine:
         self.serving_orders: List[Order] = []
         self.completed_orders: List[Order] = []
         self.failed_orders: List[Order] = []
+        self._max_completed_records = 3000  # 内存保护：只保留最近3000条
 
         # 陪诊员当日接单计数
         self.daily_order_count: Dict[str, int] = {}
 
         # 陪诊员时间表（记录每个陪诊员的服务时间段）
-        self.escort_schedule: Dict[str, List[Tuple[datetime, datetime]]] = {}
+        # 格式: {escort_id: [(day, start_hour, end_hour), ...]}
+        self.escort_schedule: Dict[str, List[Tuple[int, float, float]]] = {}
 
         # 医院位置缓存
         self.hospital_locations = self._build_hospital_location_cache()
@@ -86,13 +94,12 @@ class EnhancedMatchingEngine:
                     self.config.service_duration_std
                 ))
 
-                # 计算服务结束时间
-                service_end_at = order.service_start_at + timedelta(hours=order.service_duration)
-
                 # 更新陪诊员时间表
                 if escort.id not in self.escort_schedule:
                     self.escort_schedule[escort.id] = []
-                self.escort_schedule[escort.id].append((order.service_start_at, service_end_at))
+                service_start_hour = self.config.work_hours[0]  # 使用工作时间窗口起始
+                service_end_hour = service_start_hour + order.service_duration
+                self.escort_schedule[escort.id].append((day, service_start_hour, service_end_hour))
 
                 # 更新陪诊员接单计数
                 self.daily_order_count[escort.id] = self.daily_order_count.get(escort.id, 0) + 1
@@ -193,11 +200,19 @@ class EnhancedMatchingEngine:
         time_minutes = time_hours * 60
         return time_minutes
 
-    def _has_time_conflict(self, escort_id: str, day: int) -> bool:
-        """检查陪诊员是否有时间冲突"""
-        # 简化处理：只检查是否达到日接单上限
-        # 实际应该检查具体时间段是否重叠
-        return False  # 暂时禁用时间冲突检测，由日接单上限控制
+    def _has_time_conflict(self, escort_id: str, day: int, order_start_hour: int = 8, order_duration_hours: int = 3) -> bool:
+        """检查陪诊师在指定时间段是否有冲突"""
+        if escort_id not in self.escort_schedule:
+            self.escort_schedule[escort_id] = []
+            return False
+
+        order_end_hour = order_start_hour + order_duration_hours
+        for (scheduled_day, start_hour, end_hour) in self.escort_schedule[escort_id]:
+            if scheduled_day == day:
+                # 检查时间段重叠
+                if not (order_end_hour <= start_hour or order_start_hour >= end_hour):
+                    return True
+        return False
 
     def _calculate_match_score(self, escort: Escort, order: Order, distance: float) -> float:
         """计算匹配分数"""
@@ -253,7 +268,9 @@ class EnhancedMatchingEngine:
                     order.escort.current_order_id = None
 
                 self.completed_orders.append(order)
-            else:
+                # 内存保护：截断超出上限的旧记录
+                if len(self.completed_orders) > self._max_completed_records:
+                    self.completed_orders = self.completed_orders[-self._max_completed_records:]
                 # 服务失败
                 order.status = OrderStatus.FAILED
                 order.is_success = False

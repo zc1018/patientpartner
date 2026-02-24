@@ -57,7 +57,7 @@ class Simulation(BaseSimulation):
                 self.demand_gen.add_to_repurchase_pool(order.user)
 
             if order.rating:
-                self.referral_system.classify_user_nps(order.user.id, order.rating)
+                self.referral_system.classify_user_nps(order.user.id, order.rating, order.user.is_children_purchase)
                 self.referral_system.simulate_referral(order.user.id, self._current_day)
 
     def _record_daily_metrics(self, day: int, new_orders: List[Order]):

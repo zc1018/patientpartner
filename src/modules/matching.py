@@ -1,3 +1,7 @@
+# ============================================================================
+# 基础版匹配引擎 - 当前主版本，被 simulation/simulation.py (v2.0) 使用
+# 增强版见 matching_enhanced.py（支持地理距离和时间约束，尚未集成到主流程）
+# ============================================================================
 """
 匹配与履约模块 - 订单分配与服务完成
 """
@@ -27,6 +31,7 @@ class MatchingEngine:
         self.serving_orders: List[Order] = []
         self.completed_orders: List[Order] = []
         self.failed_orders: List[Order] = []
+        self._max_completed_records = 3000  # 内存保护：只保留最近3000条（约30天x100单/天）
 
         # 陪诊员当日接单计数
         self.daily_order_count: Dict[str, int] = {}
@@ -108,6 +113,7 @@ class MatchingEngine:
         3. 普通匹配（复购率30%）- 擅长医院 + 评分高
         """
         if not available_escorts:
+            order.cancel_reason = "陪诊师全满"
             return None
 
         # 筛选有效候选（未达接单上限、状态可用）
@@ -118,12 +124,14 @@ class MatchingEngine:
         ]
 
         if not candidates:
+            order.cancel_reason = "陪诊师全满"
             return None
 
         # 优先级1：指定陪诊师（复购率82%的关键杠杆）
         if order.user.has_designated_escort():
             self.match_statistics["designated_requests"] += 1
-            designated = self._get_escort_by_id(order.user.designated_escort_id, candidates)
+            designated_id = order.user.designated_escort_id
+            designated = self._get_escort_by_id(designated_id, candidates) if designated_id else None
             if designated and self._is_escort_suitable(designated, order):
                 order.match_type = "designated"
                 order.is_designated_matched = True
@@ -133,7 +141,8 @@ class MatchingEngine:
         # 优先级2：历史陪诊师（复购用户）
         if order.user.has_history_escort():
             self.match_statistics["history_requests"] += 1
-            history_escort = self._get_escort_by_id(order.user.last_escort_id, candidates)
+            last_id = order.user.last_escort_id
+            history_escort = self._get_escort_by_id(last_id, candidates) if last_id else None
             if history_escort and self._is_escort_suitable(history_escort, order):
                 order.match_type = "history"
                 self.match_statistics["history_success"] += 1
@@ -167,12 +176,16 @@ class MatchingEngine:
 
         return True
 
-    def _normal_match(self, order: Order, candidates: List[Escort]) -> Optional[Escort]:
+    def _normal_match(self, order: Order, candidates: List[Escort], max_distance_km: float = 15.0) -> Optional[Escort]:
         """普通匹配逻辑：地理位置优先 > 擅长医院 > 评分高"""
         # 如果有地理位置匹配器，优先使用距离最近的陪诊员
         if self.geo_matcher:
-            result = self.geo_matcher.find_nearest_escort(order, candidates)
+            result = self.geo_matcher.find_nearest_escort(order, candidates, max_distance_km=max_distance_km)
             if result.escort:
+                if result.distance_km > max_distance_km:
+                    # 距离超限，订单匹配失败
+                    order.cancel_reason = "无附近陪诊师（距离超限）"
+                    return None
                 return result.escort
 
         # 回退：擅长该医院 > 评分高
@@ -225,6 +238,9 @@ class MatchingEngine:
                     order.user.add_history_escort(order.escort.id, order.rating)
 
                 self.completed_orders.append(order)
+                # 内存保护：截断超出上限的旧记录
+                if len(self.completed_orders) > self._max_completed_records:
+                    self.completed_orders = self.completed_orders[-self._max_completed_records:]
             else:
                 # 服务失败
                 order.status = OrderStatus.FAILED
@@ -260,7 +276,7 @@ class MatchingEngine:
         for order in timeout_orders:
             order.status = OrderStatus.FAILED
             order.is_success = False
-            order.cancel_reason = "当日无可用陪诊员"
+            order.cancel_reason = order.cancel_reason or "超时未匹配"
 
             # 匹配失败也可能触发投诉（用户等待过久）
             if self.complaint_handler:

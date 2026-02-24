@@ -1,5 +1,11 @@
+# ============================================================================
+# WARNING: 旧版本 - 已被 simulation/simulation.py 替代
+# 保留用于向后兼容，新代码请使用 from simulation.simulation import Simulation
+# 版本关系：此文件是 v1.0（单体类），simulation/simulation.py 是 v2.0（模板方法模式重构）
+# 主入口 app.py 已通过 simulation/__init__.py 导入新版 Simulation
+# ============================================================================
 """
-主模拟引擎
+主模拟引擎（旧版 v1.0 - 已废弃，保留用于向后兼容）
 """
 import random
 from typing import Optional
@@ -109,7 +115,7 @@ class Simulation:
 
             # NPS 分类（有评分的订单）
             if order.rating:
-                self.referral_system.classify_user_nps(order.user.id, order.rating)
+                self.referral_system.classify_user_nps(order.user.id, order.rating, order.user.is_children_purchase)
                 # 推荐者模拟推荐行为
                 self.referral_system.simulate_referral(order.user.id, day)
 
@@ -136,7 +142,7 @@ class Simulation:
             "completion_rate": self.matching_engine.get_statistics().get("completion_rate", 0),
         }
 
-        event = self.llm_client.generate_event(state)
+        event = self.llm_client.generate_event(state) if self.llm_client else None
         if event:
             self.console.print(f"\n[yellow]📢 突发事件（第{day}天）：{event.get('description', '')}[/yellow]\n")
 

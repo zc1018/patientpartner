@@ -1,10 +1,53 @@
 """
 竞争模拟模块 - 模拟市场竞争和份额变化
+
+真实竞争格局：医院自营(40%) + 个人陪诊师(35%) + 滴滴(15%) + 其他平台(10%)
 """
 import random
 from typing import Dict, List
 from dataclasses import dataclass, field
 import numpy as np
+
+
+# 真实竞争格局定义
+REAL_COMPETITORS = {
+    "hospital_self_operated": {
+        "name": "医院自营陪诊",
+        "market_share": 0.40,
+        "price_range": (300, 500),
+        "strengths": ["信任度高", "医院认可", "专业性强"],
+        "weaknesses": ["价格贵", "预约难", "服务标准化差"],
+        "target_users": "高端用户、复杂病症",
+        "price_sensitivity": 0.2,  # 用户对价格不敏感
+    },
+    "individual_escorts": {
+        "name": "个人陪诊师(微信群)",
+        "market_share": 0.35,
+        "price_range": (150, 200),
+        "strengths": ["价格低", "灵活", "熟人推荐"],
+        "weaknesses": ["不稳定", "无保障", "服务质量参差不齐"],
+        "target_users": "价格敏感用户",
+        "price_sensitivity": 1.5,
+    },
+    "didi_escort": {
+        "name": "滴滴陪诊",
+        "market_share": 0.15,
+        "price_range": (220, 250),
+        "strengths": ["平台保障", "标准化服务", "品牌信任"],
+        "weaknesses": ["新进入者", "医院准入难"],
+        "target_users": "中端用户、首次使用者",
+        "price_sensitivity": 0.8,
+    },
+    "other_platforms": {
+        "name": "其他平台",
+        "market_share": 0.10,
+        "price_range": (200, 280),
+        "strengths": ["流量入口"],
+        "weaknesses": ["非专业"],
+        "target_users": "泛用户",
+        "price_sensitivity": 1.0,
+    }
+}
 
 
 @dataclass
@@ -28,6 +71,13 @@ class Competitor:
     pricing_strategy: str = "stable"  # stable/aggressive/premium
     expansion_rate: float = 0.0  # 扩张速度
 
+    # 真实竞争格局扩展字段
+    price_range: tuple = (200, 300)
+    strengths: List[str] = field(default_factory=list)
+    weaknesses: List[str] = field(default_factory=list)
+    target_users: str = ""
+    price_sensitivity: float = 1.0
+
 
 class CompetitionSimulator:
     """竞争模拟器"""
@@ -48,45 +98,34 @@ class CompetitionSimulator:
         np.random.seed(config.random_seed)
 
     def _initialize_competitors(self) -> Dict[str, Competitor]:
-        """初始化竞品 - 没有明显头部的市场"""
-        competitors = {
-            "滴滴陪诊": Competitor(
-                name="滴滴陪诊",
-                initial_market_share=0.30,  # 30%
-                current_market_share=0.30,
-                avg_price=235,
-                service_quality=0.75,
-                brand_strength=0.80,  # 滴滴品牌力强
-                pricing_strategy="stable",
-            ),
-            "美团陪诊": Competitor(
-                name="美团陪诊",
-                initial_market_share=0.25,  # 25%
-                current_market_share=0.25,
-                avg_price=220,
-                service_quality=0.70,
-                brand_strength=0.75,
-                pricing_strategy="aggressive",  # 价格战
-            ),
-            "支付宝陪诊": Competitor(
-                name="支付宝陪诊",
-                initial_market_share=0.20,  # 20%
-                current_market_share=0.20,
-                avg_price=250,
-                service_quality=0.72,
-                brand_strength=0.78,
-                pricing_strategy="stable",
-            ),
-            "其他平台": Competitor(
-                name="其他平台",
-                initial_market_share=0.25,  # 25%（分散的小平台）
-                current_market_share=0.25,
-                avg_price=200,
-                service_quality=0.60,
-                brand_strength=0.50,
-                pricing_strategy="aggressive",
-            ),
-        }
+        """初始化竞品 - 真实竞争格局：医院自营 + 个人陪诊师 + 滴滴 + 其他平台"""
+        competitors = {}
+        for key, data in REAL_COMPETITORS.items():
+            avg_price = sum(data["price_range"]) / 2
+            # 根据竞争者类型设定服务质量和品牌力
+            if key == "hospital_self_operated":
+                quality, brand, strategy = 0.85, 0.90, "premium"
+            elif key == "individual_escorts":
+                quality, brand, strategy = 0.55, 0.30, "aggressive"
+            elif key == "didi_escort":
+                quality, brand, strategy = 0.75, 0.80, "stable"
+            else:
+                quality, brand, strategy = 0.60, 0.50, "stable"
+
+            competitors[data["name"]] = Competitor(
+                name=data["name"],
+                initial_market_share=data["market_share"],
+                current_market_share=data["market_share"],
+                avg_price=avg_price,
+                service_quality=quality,
+                brand_strength=brand,
+                pricing_strategy=strategy,
+                price_range=tuple(data["price_range"]),
+                strengths=data["strengths"],
+                weaknesses=data["weaknesses"],
+                target_users=data["target_users"],
+                price_sensitivity=data["price_sensitivity"],
+            )
         return competitors
 
     def _calculate_total_market_demand(self) -> int:
@@ -100,17 +139,18 @@ class CompetitionSimulator:
             self.config.consult_rate *
             self.config.order_rate
         )
-        total_market_demand = didi_daily_orders / 0.30  # 滴滴占30%
+        total_market_demand = didi_daily_orders / 0.15  # 滴滴占15%
         return int(total_market_demand)
 
     def simulate_competition(self, day: int, our_orders: int, our_avg_price: float, our_avg_rating: float):
         """模拟竞争 - 更新市场份额"""
 
         # 1. 更新我们的数据
-        self.competitors["滴滴陪诊"].total_orders += our_orders
-        self.competitors["滴滴陪诊"].total_gmv += our_orders * our_avg_price
-        self.competitors["滴滴陪诊"].avg_price = our_avg_price
-        self.competitors["滴滴陪诊"].avg_rating = our_avg_rating
+        didi = self.competitors["滴滴陪诊"]
+        didi.total_orders += our_orders
+        didi.total_gmv += our_orders * our_avg_price
+        didi.avg_price = our_avg_price
+        didi.avg_rating = our_avg_rating
 
         # 2. 模拟竞品的运营数据
         self._simulate_competitor_operations(day)
@@ -251,5 +291,20 @@ class CompetitionSimulator:
         """根据竞争调整需求"""
         # 根据我们的市场份额调整需求
         our_share = self.get_our_market_share()
-        adjusted_demand = int(base_demand * our_share / 0.30)  # 基准是30%份额
+        adjusted_demand = int(base_demand * our_share / 0.15)  # 基准是15%份额
         return adjusted_demand
+
+    def simulate_escort_poaching(self, escorts: list, day: int) -> list:
+        """模拟竞争对手挖走陪诊师"""
+        if day % 30 != 0:  # 每月检查一次
+            return []
+
+        poached = []
+        for escort in escorts:
+            # 只有高评分陪诊师才会被挖
+            if escort.rating >= 4.8:
+                # 个人陪诊师市场（佣金更高）挖人概率
+                poach_prob = 0.05  # 每月5%概率
+                if random.random() < poach_prob:
+                    poached.append(escort)
+        return poached

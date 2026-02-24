@@ -2,8 +2,12 @@
 LLM 客户端 - 支持 OpenAI 和 Anthropic
 """
 import os
+import time
+import logging
 from typing import Optional, Dict
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(Enum):
@@ -45,28 +49,44 @@ class LLMClient:
                 raise ValueError("请设置环境变量 ANTHROPIC_API_KEY")
         return key
 
-    def generate(self, prompt: str, max_tokens: int = 2000) -> str:
-        """生成文本"""
-        try:
-            if self.provider == LLMProvider.OPENAI:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                )
-                return response.choices[0].message.content
+    def generate(self, prompt: str, max_tokens: int = 2000, timeout: float = 30.0) -> str:
+        """生成文本 - 带指数退避重试（最多3次，间隔1s/2s/4s）"""
+        max_retries = 3
+        base_delay = 1.0
 
-            elif self.provider == LLMProvider.ANTHROPIC:
-                response = self.client.messages.create(
-                    model=self.model,
-                    max_tokens=max_tokens,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                return response.content[0].text
+        for attempt in range(1, max_retries + 1):
+            try:
+                if self.provider == LLMProvider.OPENAI:
+                    response = self.client.chat.completions.create(  # type: ignore[union-attr]
+                        model=self.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=max_tokens,
+                        timeout=timeout,
+                    )
+                    return response.choices[0].message.content or ""
 
-        except Exception as e:
-            print(f"LLM 调用失败: {e}")
-            return ""
+                elif self.provider == LLMProvider.ANTHROPIC:
+                    response = self.client.messages.create(  # type: ignore[union-attr]
+                        model=self.model,
+                        max_tokens=max_tokens,
+                        messages=[{"role": "user", "content": prompt}],
+                        timeout=timeout,
+                    )
+                    return response.content[0].text  # type: ignore[union-attr]
+
+            except Exception as e:
+                delay = base_delay * (2 ** (attempt - 1))  # 1s, 2s, 4s
+                logger.warning(
+                    f"LLM 调用失败 (第{attempt}/{max_retries}次): {type(e).__name__}: {e}"
+                )
+                if attempt < max_retries:
+                    logger.info(f"将在 {delay}s 后重试...")
+                    time.sleep(delay)
+                else:
+                    logger.error(f"LLM 调用在 {max_retries} 次重试后仍然失败，放弃请求")
+                    return ""
+
+        return ""
 
     def generate_event(self, state: Dict) -> Optional[Dict]:
         """生成突发事件"""
