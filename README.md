@@ -14,12 +14,29 @@
 
 ## 核心功能
 
-- **蒙特卡洛模拟** — 保守/中性/乐观三场景 GMV 预测
-- **三级匹配引擎** — 指定陪诊师（82%复购）→ 历史陪诊师 → 地理就近匹配
-- **用户生命周期追踪** — 首单流失、留存曲线、复购分层
-- **投诉处理系统** — 滑动窗口投诉率计算，转化率动态修正（每↑1%投诉率 → 转化率↓0.45%）
+### 需求侧
+- **时段需求建模** — 早高峰(1.8x)/午间(1.2x)/下午(1.5x)/晚间(0.8x) 真实需求分布
+- **年龄分层行为** — 60-70岁(子女代购40%)/70-80岁(70%)/80+岁(90%，无法独立使用App)
+- **用户生命周期状态机** — active → at_risk(30天) → silent(60天) → churned(90天)，5%/周重激活概率
 - **NPS 口碑传播** — 推荐者/被动者/批评者分类，推荐转化率 7.5%
-- **地理位置匹配** — 北京 16 区就近分配，Haversine 距离计算
+
+### 供给侧
+- **陪诊员招募衰减** — 52周后最低维持40%招募能力
+- **培训体系** — 基础培训(7天)/专业培训(21天)，通过率70%
+
+### 匹配引擎
+- **增强匹配引擎** — 三级匹配（指定陪诊师82%复购 → 历史陪诊师 → 地理就近）
+- **时间冲突检测** — 实时检测陪诊师时间冲突
+- **地理距离约束** — Haversine距离计算，通勤时间不超过90分钟
+
+### 财务分析
+- **CAC 渠道差异化** — 线上广告80元/口碑推荐20元/医院合作150元/地推60元
+- **盈亏平衡分析** — 固定成本/边际贡献计算，预测盈亏平衡周数
+- **单位经济模型** — LTV/CAC 比率（健康指标 >3）
+
+### 市场竞争
+- **真实竞争格局** — 医院自营40%/个人陪诊师35%/滴滴15%/其他10%
+- **竞品挖角模拟** — 陪诊师流失率动态调整
 
 ## 项目结构
 
@@ -27,23 +44,29 @@
 src/
 ├── config/
 │   ├── settings.py              # 核心配置（含修正参数）
-│   └── integrated_data_config.py
+│   └── integrated_data_config.yaml
 ├── models/
-│   └── entities.py              # User、Order、Escort 数据模型
+│   └── entities.py             # User、Order、Escort 数据模型
 ├── modules/
-│   ├── demand.py                # 需求生成（漏斗转化 + 子女代购分层）
-│   ├── supply.py                # 供给模拟（陪诊员招募/培训/流失）
+│   ├── demand.py                # 需求生成（年龄分层 + 子女代购）
+│   ├── demand_enhanced.py       # 增强需求（时段分布 + 渠道细分）
+│   ├── supply.py                # 供给模拟（招募衰减 + 培训体系）
 │   ├── matching.py              # 三级匹配引擎
-│   ├── analytics.py             # 数据分析（LTV/CAC/GMV）
+│   ├── matching_enhanced.py     # 增强匹配（时间冲突 + 地理约束）
+│   ├── analytics.py             # 数据分析（LTV/CAC/盈亏平衡）
 │   ├── monte_carlo.py           # 蒙特卡洛模拟
+│   ├── competition.py           # 市场竞争模型
 │   ├── complaint_handler.py     # 投诉处理
-│   ├── geo_matcher.py           # 地理位置匹配
+│   ├── geo_matcher.py          # 地理位置匹配
 │   ├── referral_system.py       # NPS 口碑传播
 │   └── user_lifecycle_tracker.py
+├── agents/
+│   ├── user_behavior_agent.py  # 用户行为（生命周期 + 年龄分层）
+│   └── market_dynamics_agent.py # 市场动态
 ├── simulation/
-│   ├── base.py                  # 模板方法基类
-│   └── simulation.py            # 主模拟引擎
-└── agents/                      # 多智能体团队
+│   ├── simulation.py            # 基础模拟引擎
+│   └── simulation_competitive.py # 竞争模拟引擎
+└── simulation.py               # 主入口
 ```
 
 ## 快速开始
@@ -55,10 +78,10 @@ pip install -r requirements.txt
 # 运行 90 天模拟
 python -c "
 from src.config.settings import SimulationConfig
-from src.simulation import Simulation
+from src.simulation_competitive import CompetitiveSimulation
 
 config = SimulationConfig(total_days=90, enable_llm=False)
-sim = Simulation(config)
+sim = CompetitiveSimulation(config)
 result = sim.run()
 "
 ```
@@ -86,3 +109,10 @@ result = sim.run()
 - NumPy / Pandas — 数值计算
 - Rich — 终端可视化
 - 模板方法模式 — 模拟引擎架构
+- 多智能体系统 — 用户行为和市场动态模拟
+
+## 版本历史
+
+- **v2.0** — 基于外部研究数据全面修正核心参数
+- **v2.1** — 增强匹配引擎、时段需求建模、CAC渠道差异化
+- **v2.2** — 年龄分层行为、用户生命周期状态机、盈亏平衡分析
