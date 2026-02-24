@@ -346,8 +346,8 @@ class Analytics:
                     m.bad_debt_cost / m.completed_orders
                 )
 
-        # 毛利率（假设30%）
-        gross_margin = 0.30
+        # 毛利率（从config读取）
+        gross_margin = getattr(config, 'gross_margin_rate', 0.30)
         contribution_per_order = avg_order_value * gross_margin - avg_variable_cost_per_order
 
         if contribution_per_order <= 0:
@@ -373,8 +373,20 @@ class Analytics:
             "contribution_per_order": contribution_per_order,
         }
 
-    def calculate_channel_roi(self) -> Dict:
-        """计算渠道ROI分析"""
+    def calculate_channel_roi(self, config) -> Dict:
+        """计算渠道ROI分析
+
+        使用 config 中的 channel_cac 配置来计算各渠道的 ROI
+        """
+        # 从 config 获取渠道CAC配置
+        channel_cac_config = getattr(config, 'channel_cac', {
+            "default": 50,
+            "online_ad": 80,
+            "referral": 20,
+            "hospital_partner": 150,
+            "offline_promotion": 60,
+        })
+
         # 按渠道统计（需要在 record_daily 时传入渠道信息）
         channel_stats: Dict[str, Dict] = {}
 
@@ -389,16 +401,19 @@ class Analytics:
                 channel_stats[channel]["cac_cost"] += m.cac_cost
                 channel_stats[channel]["orders"] += m.completed_orders
 
-        # 计算各渠道 ROI
+        # 计算各渠道 ROI（使用 config 中的 channel_cac）
         channel_roi = {}
         for channel, stats in channel_stats.items():
-            roi = stats["gmv"] / stats["cac_cost"] if stats["cac_cost"] > 0 else 0
+            # 使用配置中的CAC值
+            cac_value = channel_cac_config.get(channel, channel_cac_config.get("default", 50))
+            cac_cost = cac_value * stats["orders"]
+            roi = stats["gmv"] / cac_cost if cac_cost > 0 else 0
             channel_roi[channel] = {
                 "gmv": stats["gmv"],
-                "cac_cost": stats["cac_cost"],
+                "cac_cost": cac_cost,
                 "orders": stats["orders"],
                 "roi": round(roi, 2),
-                "cac_per_order": stats["cac_cost"] / stats["orders"] if stats["orders"] > 0 else 0,
+                "cac_per_order": cac_value,
             }
 
         return channel_roi

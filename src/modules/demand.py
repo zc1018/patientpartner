@@ -15,6 +15,31 @@ from ..models.entities import User, Order
 from .geo_matcher import GeoMatcher
 
 
+# 年龄分层行为差异模型（从 user_behavior_agent 导入）
+AGE_BEHAVIOR = {
+    "60-70": {"children_purchase_rate": 0.4, "price_sensitivity": 0.6, "is_app_capable": True},
+    "70-80": {"children_purchase_rate": 0.7, "price_sensitivity": 0.7, "is_app_capable": True},
+    "80+":   {"children_purchase_rate": 0.9, "price_sensitivity": 0.5, "is_app_capable": False},
+}
+
+
+def _get_age_group(age: int) -> str:
+    """根据年龄返回分层key"""
+    if age < 70:
+        return "60-70"
+    elif age < 80:
+        return "70-80"
+    else:
+        return "80+"
+
+
+def _generate_user_age() -> int:
+    """生成用户年龄（60-90岁，正态分布偏向前高龄）"""
+    # 使用截断正态分布：均值75，标准差8，范围60-90
+    age = int(np.random.normal(75, 8))
+    return max(60, min(90, age))
+
+
 class DemandGenerator:
     """需求生成器"""
 
@@ -100,29 +125,35 @@ class DemandGenerator:
 
     def _create_user(self, is_repurchase: bool = False) -> User:
         """
-        创建用户对象 - 实现子女代购分层 + 地理位置分配
+        创建用户对象 - 实现年龄分层 + 子女代购分层 + 地理位置分配
 
-        子女代购（80%）vs 老年自主（20%）：
-        - 子女代购：复购率45%，价格敏感度中等
-        - 老年自主：复购率22.5%，价格敏感度高
+        年龄分层（AGE_BEHAVIOR）：
+        - 60-70岁：子女代购率40%，价格敏感度0.6，能独立使用App
+        - 70-80岁：子女代购率70%，价格敏感度0.7，能独立使用App
+        - 80+岁：子女代购率90%，价格敏感度0.5，不能独立使用App
         """
-        is_children_purchase = random.random() < 0.80
+        # 1. 生成用户年龄
+        age = _generate_user_age()
+        age_group = _get_age_group(age)
+        behavior = AGE_BEHAVIOR[age_group]
+
+        # 2. 根据年龄分层确定子女代购率
+        is_children_purchase = random.random() < behavior["children_purchase_rate"]
         lat, lon, district = self.geo_matcher.assign_user_location(None)
 
         user = User(
             target_hospital=random.choice(self.config.covered_hospitals),
             disease_type=random.choice(self.config.disease_types),
             service_period=random.choice(["上午", "下午", "全天"]),
-            price_sensitivity=(
-                random.uniform(0.3, 0.6) if is_children_purchase
-                else random.uniform(0.6, 0.9)
-            ),
+            price_sensitivity=behavior["price_sensitivity"],
             is_repurchase=is_repurchase,
             total_orders=1 if not is_repurchase else 0,
             is_children_purchase=is_children_purchase,
             location_lat=lat,
             location_lon=lon,
             location_district=district,
+            age=age,
+            is_app_capable=behavior["is_app_capable"],
         )
         return user
 

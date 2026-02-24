@@ -116,6 +116,11 @@ class UserBehaviorAgent(BaseAgent):
         messages = []
         current_day = simulation_state.get('current_day', 0)
 
+        # 0. 获取用户列表用于生命周期状态更新
+        users = simulation_state.get('users', [])
+        if users:
+            self._update_lifecycle_state(users, current_day)
+
         # 1. 模拟新用户下单
         new_orders = self._simulate_new_user_orders(simulation_state)
         if new_orders:
@@ -298,6 +303,45 @@ class UserBehaviorAgent(BaseAgent):
                 self.state.memory['churned_users'].append(user_id)
 
         return churned_users
+
+    def _update_lifecycle_state(self, users: List[Any], current_day: int):
+        """
+        更新用户生命周期状态
+
+        状态转换规则：
+        - active: 活跃用户，距上次下单 < 30天
+        - at_risk: 风险用户，距上次下单 30-60天
+        - silent: 沉默用户，距上次下单 60-90天
+        - churned: 流失用户，距上次下单 > 90天
+        - reactivated: 已重激活用户（通过营销活动等重新激活）
+        """
+        for user in users:
+            # 更新距上次下单天数
+            if hasattr(user, 'days_since_last_order'):
+                user.days_since_last_order += 1
+
+            # 状态转换
+            current_state = getattr(user, 'lifecycle_state', 'active')
+
+            if current_state == "active":
+                if user.days_since_last_order >= 30:
+                    user.lifecycle_state = "at_risk"
+
+            elif current_state == "at_risk":
+                if user.days_since_last_order >= 60:
+                    user.lifecycle_state = "silent"
+
+            elif current_state == "silent":
+                # 5%概率重激活
+                if random.random() < 0.05:
+                    user.lifecycle_state = "reactivated"
+                    user.days_since_last_order = 0
+
+            elif current_state == "churned":
+                # 极低概率重激活
+                if random.random() < 0.01:
+                    user.lifecycle_state = "reactivated"
+                    user.days_since_last_order = 0
 
     def _handle_order_completed(self, content: Dict) -> Optional[AgentMessage]:
         """处理订单完成事件"""

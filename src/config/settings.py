@@ -2,7 +2,7 @@
 配置模块 - 定义所有模拟参数
 """
 from dataclasses import dataclass, field
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 import yaml
 
 
@@ -87,6 +87,18 @@ class SimulationConfig:
     # 平台成本
     platform_commission: float = 0.05  # 滴滴平台抽成比例（5%）
     payment_fee_rate: float = 0.006  # 支付手续费率（0.6%）
+
+    # 毛利率
+    gross_margin_rate: float = 0.30  # 毛利率30%（默认）
+
+    # 渠道获客成本配置（从 integrated_data_config.yaml 读取）
+    channel_cac: Dict = field(default_factory=lambda: {
+        "default": 50,
+        "online_ad": 80,
+        "referral": 20,
+        "hospital_partner": 150,
+        "offline_promotion": 60,
+    })
 
     # 其他成本
     customer_service_cost_per_order: float = 2.0  # 客服成本（元/单）

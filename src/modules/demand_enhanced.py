@@ -17,6 +17,30 @@ from ..config.beijing_real_data import BeijingRealDataConfig
 from ..models.entities import User, Order, OrderStatus
 
 
+# 年龄分层行为差异模型
+AGE_BEHAVIOR = {
+    "60-70": {"children_purchase_rate": 0.4, "price_sensitivity": 0.6, "is_app_capable": True},
+    "70-80": {"children_purchase_rate": 0.7, "price_sensitivity": 0.7, "is_app_capable": True},
+    "80+":   {"children_purchase_rate": 0.9, "price_sensitivity": 0.5, "is_app_capable": False},
+}
+
+
+def _get_age_group(age: int) -> str:
+    """根据年龄返回分层key"""
+    if age < 70:
+        return "60-70"
+    elif age < 80:
+        return "70-80"
+    else:
+        return "80+"
+
+
+def _generate_user_age() -> int:
+    """生成用户年龄（60-90岁，正态分布偏向前高龄）"""
+    age = int(np.random.normal(75, 8))
+    return max(60, min(90, age))
+
+
 class EnhancedDemandGenerator:
     """增强版需求生成器 - 考虑真实数据"""
 
@@ -246,9 +270,17 @@ class EnhancedDemandGenerator:
         district: Optional[str] = None,
         referrer: Optional[User] = None
     ) -> User:
-        """创建用户 - 基于真实数据"""
+        """创建用户 - 基于真实数据 + 年龄分层"""
 
-        # 1. 选择医院（基于权重）
+        # 1. 生成用户年龄（60-90岁，正态分布偏向前高龄）
+        age = _generate_user_age()
+        age_group = _get_age_group(age)
+        behavior = AGE_BEHAVIOR[age_group]
+
+        # 2. 根据年龄分层确定子女代购率
+        is_children_purchase = random.random() < behavior["children_purchase_rate"]
+
+        # 3. 选择医院（基于权重）
         if preferred_hospital:
             target_hospital = preferred_hospital
         else:
@@ -256,12 +288,12 @@ class EnhancedDemandGenerator:
             weights = list(self.hospital_weights.values())
             target_hospital = random.choices(hospitals, weights=weights)[0]
 
-        # 2. 选择疾病（基于真实分布）
+        # 4. 选择疾病（基于真实分布）
         diseases = list(self.beijing_data.disease_distribution.keys())
         weights = list(self.beijing_data.disease_distribution.values())
         disease_type = random.choices(diseases, weights=weights)[0]
 
-        # 3. 选择区域（影响付费能力）
+        # 5. 选择区域（影响付费能力）
         if district:
             user_district = district
         else:
@@ -269,7 +301,7 @@ class EnhancedDemandGenerator:
             weights = list(self.district_weights.values())
             user_district = random.choices(districts, weights=weights)[0]
 
-        # 4. 确定收入等级
+        # 6. 确定收入等级
         income_levels = list(self.beijing_data.elderly_income_distribution.keys())
         income_ratios = [
             data["ratio"]
@@ -277,17 +309,20 @@ class EnhancedDemandGenerator:
         ]
         income_level = random.choices(income_levels, weights=income_ratios)[0]
 
-        # 5. 创建用户
+        # 7. 创建用户（使用年龄分层后的配置）
         user = User(
             target_hospital=target_hospital,
             disease_type=disease_type,
             service_period=random.choice(["上午", "下午", "全天"]),
-            price_sensitivity=self._calculate_price_sensitivity(user_district, income_level),
+            price_sensitivity=behavior["price_sensitivity"],
             is_repurchase=False,
             total_orders=1,
             location_district=user_district,
             income_level=income_level,
             channel_type=channel_type,
+            is_children_purchase=is_children_purchase,
+            age=age,
+            is_app_capable=behavior["is_app_capable"],
         )
 
         return user
