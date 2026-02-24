@@ -9,6 +9,24 @@ from datetime import datetime, timedelta
 from .base_agent import BaseAgent, AgentMessage, AgentType, MessageType
 
 
+# 年龄分层行为差异模型
+AGE_BEHAVIOR = {
+    "60-70": {"children_purchase_rate": 0.4, "price_sensitivity": 0.6, "is_app_capable": True},
+    "70-80": {"children_purchase_rate": 0.7, "price_sensitivity": 0.7, "is_app_capable": True},
+    "80+":   {"children_purchase_rate": 0.9, "price_sensitivity": 0.5, "is_app_capable": False},
+}
+
+
+def get_age_group(age: int) -> str:
+    """根据年龄返回分层key"""
+    if age < 70:
+        return "60-70"
+    elif age < 80:
+        return "70-80"
+    else:
+        return "80+"
+
+
 # 用户分层模型
 USER_SEGMENTS = {
     "high_freq_chronic": {

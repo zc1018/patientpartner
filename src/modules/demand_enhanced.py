@@ -34,6 +34,13 @@ class EnhancedDemandGenerator:
         # 预计算区域权重（基于人口）
         self.district_weights = self._calculate_district_weights()
 
+        # 加载时段需求系数
+        self.hourly_demand_factors: Dict[str, float] = getattr(
+            beijing_data, 'hourly_demand_factors', {}
+        )
+        if not self.hourly_demand_factors and hasattr(beijing_data, '__dict__'):
+            self.hourly_demand_factors = beijing_data.__dict__.get('hourly_demand_factors', {})
+
     def _calculate_hospital_weights(self) -> Dict[str, float]:
         """计算医院权重（基于门诊量和老年人比例）"""
         weights = {}
@@ -53,6 +60,18 @@ class EnhancedDemandGenerator:
         for district, data in self.beijing_data.district_payment_ability.items():
             weights[district] = data["population"] / total
         return weights
+
+    def _get_hourly_factor(self, hour: int) -> float:
+        """根据小时获取时段需求系数"""
+        for time_range, factor in self.hourly_demand_factors.items():
+            if time_range == "other":
+                continue
+            parts = time_range.split("-")
+            if len(parts) == 2:
+                start, end = int(parts[0]), int(parts[1])
+                if start <= hour <= end:
+                    return float(factor)
+        return float(self.hourly_demand_factors.get("other", 1.0))
 
     def generate_daily_orders(self, day: int) -> List[Order]:
         """生成当日订单需求 - 多渠道"""
@@ -87,7 +106,30 @@ class EnhancedDemandGenerator:
         # 6. 应用季节性因素
         all_orders = self._apply_seasonal_factor(all_orders, day)
 
+        # 7. 应用时段需求系数并记录 hour_of_day
+        all_orders = self._apply_hourly_factors(all_orders)
+
         return all_orders
+
+    def _apply_hourly_factors(self, orders: List[Order]) -> List[Order]:
+        """为订单分配时段并应用需求系数"""
+        if not self.hourly_demand_factors:
+            return orders
+
+        work_start, work_end = self.config.work_hours
+        adjusted_orders: List[Order] = []
+
+        for order in orders:
+            # 随机分配一个工作时间内的小时
+            hour = random.randint(work_start, work_end - 1)
+            order.hour_of_day = hour
+
+            # 根据时段系数决定是否保留该订单
+            factor = self._get_hourly_factor(hour)
+            if random.random() < factor / 1.8:  # 归一化到最大系数
+                adjusted_orders.append(order)
+
+        return adjusted_orders
 
     def _generate_channel_orders(self, channel: Dict, day: int) -> List[Order]:
         """生成特定渠道的订单"""

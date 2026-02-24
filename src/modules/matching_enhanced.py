@@ -271,6 +271,7 @@ class EnhancedMatchingEngine:
                 # 内存保护：截断超出上限的旧记录
                 if len(self.completed_orders) > self._max_completed_records:
                     self.completed_orders = self.completed_orders[-self._max_completed_records:]
+            else:
                 # 服务失败
                 order.status = OrderStatus.FAILED
                 order.is_success = False

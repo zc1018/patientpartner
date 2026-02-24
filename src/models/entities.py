@@ -48,9 +48,17 @@ class User:
     location_lon: float = 116.4074
     location_district: str = "朝阳"  # 所在区域
 
+    # 年龄分层
+    age: int = 70  # 用户年龄
+    is_app_capable: bool = True  # 是否能独立使用App（80+岁为False）
+
     # 增强版需求生成器扩展字段
     income_level: str = "中等收入"   # 收入等级
     channel_type: str = "online"     # 获客渠道类型
+
+    # 用户生命周期状态
+    lifecycle_state: str = "active"  # active/at_risk/silent/churned/reactivated
+    days_since_last_order: int = 0
 
     # 指定陪诊师相关字段（新增）
     designated_escort_id: Optional[str] = None  # 用户指定的陪诊师ID
@@ -138,6 +146,9 @@ class Order:
     # 获客渠道信息（增强版需求生成器使用）
     acquisition_channel: Optional[str] = None
     acquisition_cost: float = 0.0
+
+    # 时段信息
+    hour_of_day: Optional[int] = None  # 订单创建时的小时（0-23）
 
     # 匹配类型追踪（新增）
     match_type: str = "normal"  # "designated"/"history"/"normal"

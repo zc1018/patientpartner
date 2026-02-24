@@ -312,3 +312,115 @@ class Analytics:
         )
         result.calculate_summary()
         return result
+
+    def calculate_break_even(self, config) -> Dict:
+        """计算盈亏平衡点
+
+        盈亏平衡订单量 = 固定成本 / (客单价 × 毛利率 - 变动成本)
+        """
+        if not self.daily_metrics:
+            return {"break_even_orders": 0, "break_even_weeks": 0}
+
+        # 计算平均客单价和毛利率
+        total_gmv = sum(m.gmv for m in self.daily_metrics)
+        total_orders = sum(m.completed_orders for m in self.daily_metrics)
+
+        if total_orders == 0:
+            return {"break_even_orders": 0, "break_even_weeks": 0}
+
+        avg_order_value = total_gmv / total_orders
+
+        # 固定成本（周均）- 招募成本 + 运营成本
+        weekly_fixed_cost = 0.0
+        for m in self.daily_metrics:
+            weekly_fixed_cost += m.daily_operation_cost
+        weekly_fixed_cost /= max(1, len(self.daily_metrics) / 7)
+
+        # 变动成本（每单）- 陪诊员分成 + 支付手续费 + 坏账
+        avg_variable_cost_per_order = 0.0
+        for m in self.daily_metrics:
+            if m.completed_orders > 0:
+                avg_variable_cost_per_order = (
+                    m.escort_cost / m.completed_orders +
+                    m.payment_fee / m.completed_orders +
+                    m.bad_debt_cost / m.completed_orders
+                )
+
+        # 毛利率（假设30%）
+        gross_margin = 0.30
+        contribution_per_order = avg_order_value * gross_margin - avg_variable_cost_per_order
+
+        if contribution_per_order <= 0:
+            return {
+                "break_even_orders": float('inf'),
+                "break_even_weeks": float('inf'),
+                "avg_order_value": avg_order_value,
+                "weekly_fixed_cost": weekly_fixed_cost,
+                "contribution_per_order": contribution_per_order,
+            }
+
+        break_even_orders = weekly_fixed_cost / contribution_per_order
+
+        # 假设每周订单量
+        avg_weekly_orders = total_orders / max(1, len(self.daily_metrics) / 7)
+        break_even_weeks = break_even_orders / avg_weekly_orders if avg_weekly_orders > 0 else float('inf')
+
+        return {
+            "break_even_orders": int(break_even_orders),
+            "break_even_weeks": round(break_even_weeks, 1),
+            "avg_order_value": avg_order_value,
+            "weekly_fixed_cost": weekly_fixed_cost,
+            "contribution_per_order": contribution_per_order,
+        }
+
+    def calculate_channel_roi(self) -> Dict:
+        """计算渠道ROI分析"""
+        # 按渠道统计（需要在 record_daily 时传入渠道信息）
+        channel_stats: Dict[str, Dict] = {}
+
+        for m in self.daily_metrics:
+            # 简化处理：使用 CAC 成本作为渠道指标
+            if m.cac_per_order > 0:
+                channel = "default"
+                if channel not in channel_stats:
+                    channel_stats[channel] = {"gmv": 0, "cac_cost": 0, "orders": 0}
+
+                channel_stats[channel]["gmv"] += m.gmv
+                channel_stats[channel]["cac_cost"] += m.cac_cost
+                channel_stats[channel]["orders"] += m.completed_orders
+
+        # 计算各渠道 ROI
+        channel_roi = {}
+        for channel, stats in channel_stats.items():
+            roi = stats["gmv"] / stats["cac_cost"] if stats["cac_cost"] > 0 else 0
+            channel_roi[channel] = {
+                "gmv": stats["gmv"],
+                "cac_cost": stats["cac_cost"],
+                "orders": stats["orders"],
+                "roi": round(roi, 2),
+                "cac_per_order": stats["cac_cost"] / stats["orders"] if stats["orders"] > 0 else 0,
+            }
+
+        return channel_roi
+
+    def calculate_user_lifecycle_funnel(self) -> Dict:
+        """计算用户生命周期漏斗分析"""
+        # 简化实现：基于流失率估算
+        funnel = {
+            "new_users": 0,
+            "at_risk": 0,
+            "silent": 0,
+            "churned": 0,
+            "reactivated": 0,
+        }
+
+        for m in self.daily_metrics:
+            # 估算新用户转化
+            funnel["new_users"] += m.new_orders
+            # 假设流失率
+            funnel["churned"] += int(m.new_orders * 0.55 * (len(self.daily_metrics) / 30))
+
+        funnel["at_risk"] = int(funnel["new_users"] * 0.15)
+        funnel["silent"] = int(funnel["new_users"] * 0.10)
+
+        return funnel

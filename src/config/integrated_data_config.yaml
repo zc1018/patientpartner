@@ -361,6 +361,12 @@ repeat_rate_by_segment:
     repeat_rate: 0.225
 repeat_rate_designated: 0.82
 repeat_rate_first_order: 0.135
+hourly_demand_factors:
+  "8-10": 1.8    # 早高峰
+  "11-13": 1.2   # 午间
+  "14-16": 1.5   # 下午高峰
+  "17-19": 0.8   # 傍晚
+  "other": 0.6   # 其他时段
 seasonal_factors:
   autumn: 1.0
   spring: 1.0
@@ -385,6 +391,12 @@ training_quality_parameters:
     description: 专业培训：21天，评分4.7
     duration_days: 21
     pass_rate: 0.7
+channel_cac:
+  online_ad: 80
+  referral: 20
+  hospital_partner: 150
+  offline_promotion: 60
+  default: 50
 user_churn_rate:
   2_3_order_users:
     90_day_retention: 0.45
