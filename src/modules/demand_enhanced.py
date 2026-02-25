@@ -130,6 +130,27 @@ class EnhancedDemandGenerator:
         # 6. 应用季节性因素
         all_orders = self._apply_seasonal_factor(all_orders, day)
 
+        # 6.5 周内差异（周末需求下降20%）和月内差异（月末就医高峰+15%）
+        day_of_week = day % 7
+        weekend_factor = 0.8 if day_of_week in [5, 6] else 1.0
+        day_of_month = (day % 30) + 1
+        month_end_factor = 1.15 if day_of_month >= 25 else 1.0
+        time_factor = weekend_factor * month_end_factor
+        if time_factor != 1.0:
+            target_count = max(0, int(len(all_orders) * time_factor))
+            if target_count < len(all_orders):
+                all_orders = random.sample(all_orders, target_count)
+            elif target_count > len(all_orders) and all_orders:
+                extra = target_count - len(all_orders)
+                for _ in range(extra):
+                    template = random.choice(all_orders)
+                    new_order = Order(
+                        user=template.user,
+                        price=template.price,
+                        created_at=template.created_at,
+                    )
+                    all_orders.append(new_order)
+
         # 7. 应用时段需求系数并记录 hour_of_day
         all_orders = self._apply_hourly_factors(all_orders)
 
@@ -250,7 +271,7 @@ class EnhancedDemandGenerator:
         """生成复购订单"""
         orders = []
 
-        for user_id, user in list(self.repurchase_pool.items()):
+        for _, user in list(self.repurchase_pool.items()):
             if day % self.config.repurchase_cycle_days == 0:
                 # 根据用户收入等级决定复购概率
                 repurchase_prob = self._get_repurchase_prob_by_income(user)
@@ -268,7 +289,7 @@ class EnhancedDemandGenerator:
         channel_type: str = "online",
         preferred_hospital: Optional[str] = None,
         district: Optional[str] = None,
-        referrer: Optional[User] = None
+        referrer: Optional[User] = None  # noqa: ARG002
     ) -> User:
         """创建用户 - 基于真实数据 + 年龄分层"""
 

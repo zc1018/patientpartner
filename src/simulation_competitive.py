@@ -3,6 +3,7 @@
 """
 import random
 from typing import Optional
+import pandas as pd
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 from rich.table import Table
@@ -14,6 +15,10 @@ from .modules.supply import SupplySimulator
 from .modules.matching_enhanced import EnhancedMatchingEngine
 from .modules.analytics import Analytics, SimulationResult
 from .modules.competition import CompetitionSimulator
+from .modules.complaint_handler import ComplaintHandler
+from .modules.referral_system import ReferralSystem
+from .modules.event_generator import EventGenerator
+from .modules.geo_matcher import GeoMatcher
 from .llm.client import LLMClient
 
 
@@ -35,6 +40,18 @@ class CompetitiveSimulation:
 
         # 竞争模拟器
         self.competition_sim = CompetitionSimulator(config)
+
+        # 投诉处理器
+        self.complaint_handler = ComplaintHandler()
+
+        # NPS 口碑传播系统
+        self.referral_system = ReferralSystem()
+
+        # 地理位置匹配器
+        self.geo_matcher = GeoMatcher()
+
+        # 政策风险事件生成器
+        self.event_generator = EventGenerator(pd.DataFrame())
 
         # LLM 客户端（可选）
         self.llm_client: Optional[LLMClient] = None
@@ -91,9 +108,14 @@ class CompetitiveSimulation:
         # 2. 生成需求（考虑竞争）
         base_orders = self.demand_gen.generate_daily_orders(day)
 
-        # 根据市场份额调整订单量
-        our_market_share = self.competition_sim.get_our_market_share()
-        # 简化处理：订单量已经基于滴滴流量生成，不需要额外调整
+        # 2.5 应用政策风险事件影响
+        self.event_generator.generate_policy_risk_events(day)
+        policy_modifier = self.event_generator.get_active_policy_demand_modifier(day)
+        if policy_modifier < 0:
+            keep_ratio = max(0.1, 1 + policy_modifier)
+            base_orders = random.sample(base_orders, int(len(base_orders) * keep_ratio))
+
+        # 根据市场份额调整订单量（订单量已基于滴滴流量生成，不需要额外调整）
 
         new_orders = base_orders
 
@@ -132,6 +154,34 @@ class CompetitiveSimulation:
         for order in completed_orders:
             if order.is_success and order.rating and order.rating >= 4.0:
                 self.demand_gen.add_to_repurchase_pool(order.user, order.rating)
+
+                # NPS 分类（集成 referral_system）
+                is_child = getattr(order.user, 'is_child_purchase', False)
+                self.referral_system.classify_user_nps(
+                    order.user.id, order.rating, is_child_purchase=is_child
+                )
+                # 推荐者尝试推荐新用户
+                self.referral_system.simulate_referral(order.user.id, day)
+
+        # 9.5 投诉处理（集成 complaint_handler）
+        for order in self.matching_engine.failed_orders:
+            if order.cancel_reason and order.cancel_reason != "超时未匹配":
+                self.complaint_handler.generate_complaint(
+                    order_id=order.id,
+                    user_id=order.user.id,
+                    escort_id=order.escort.id if order.escort else None,
+                    order_price=order.price,
+                    day=day,
+                )
+        self.complaint_handler.process_daily_complaints(day, len(new_orders))
+
+        # 9.7 负面口碑传播（差评用户）
+        detractors = [
+            o.user for o in self.matching_engine.completed_orders[-50:]
+            if o.rating and o.rating < 3.5
+        ]
+        if detractors:
+            self.referral_system.simulate_negative_word_of_mouth(detractors)
 
         # 10. 记录每日数据
         self._record_daily_metrics(day, new_orders, churned_users)
@@ -181,6 +231,17 @@ class CompetitiveSimulation:
         market_stats = self.competition_sim.get_market_statistics()
         result.market_share = market_stats["our_market_share"]
         result.competitors = market_stats["competitors"]
+
+        # 高级分析
+        self.break_even_analysis = self.analytics.calculate_break_even(self.config)
+        self.channel_roi = self.analytics.calculate_channel_roi(self.config)
+        self.lifecycle_funnel = self.analytics.calculate_user_lifecycle_funnel()
+
+        # 投诉统计
+        self.complaint_stats = self.complaint_handler.get_statistics()
+
+        # NPS 统计
+        self.referral_stats = self.referral_system.get_statistics()
 
         # 使用 LLM 生成分析报告
         if self.llm_client:

@@ -48,6 +48,7 @@ class DemandGenerator:
         self.repurchase_pool: Dict[str, User] = {}  # 复购用户池
         self.geo_matcher = GeoMatcher()             # 地理位置匹配器
         self.conversion_rate_modifier: float = 1.0  # 投诉率影响的转化率修正系数
+        self._current_avg_price: float = getattr(config, 'price_mean', 250)  # 当前平均客单价
         random.seed(config.random_seed)
         np.random.seed(config.random_seed)
 
@@ -55,9 +56,32 @@ class DemandGenerator:
         """设置转化率修正系数（由 complaint_handler 提供）"""
         self.conversion_rate_modifier = max(0.5, min(1.0, modifier))
 
+    def set_current_avg_price(self, avg_price: float):
+        """设置当前平均客单价（由外部模块提供）"""
+        self._current_avg_price = avg_price
+
     def generate_daily_orders(self, day: int) -> List[Order]:
         """生成当日订单需求"""
         base_orders = self._calculate_base_demand()
+
+        # 价格弹性调整：价格高于基准时需求下降
+        base_price = getattr(self.config, 'base_price', 250)
+        price_change_pct = (self._current_avg_price - base_price) / base_price
+        price_elasticity = -1.2
+        demand_adjustment = 1 + price_elasticity * price_change_pct
+        base_orders = base_orders * max(0.3, demand_adjustment)
+
+        # 周内差异（周末需求下降20%）
+        day_of_week = day % 7
+        weekend_factor = 0.8 if day_of_week in [5, 6] else 1.0
+
+        # 月内差异（月末就医高峰+15%）
+        day_of_month = (day % 30) + 1
+        month_end_factor = 1.15 if day_of_month >= 25 else 1.0
+
+        # 应用系数到订单数量
+        base_orders = base_orders * weekend_factor * month_end_factor
+
         actual_orders = self._apply_volatility(base_orders)
         new_orders = self._generate_new_user_orders(actual_orders, day)
         repurchase_orders = self._generate_repurchase_orders(day)
@@ -93,7 +117,7 @@ class DemandGenerator:
     def _generate_repurchase_orders(self, day: int) -> List[Order]:
         """生成复购订单 - 基于用户分层的差异化复购率"""
         orders = []
-        for user_id, user in list(self.repurchase_pool.items()):
+        for _, user in list(self.repurchase_pool.items()):
             if day % self.config.repurchase_cycle_days == 0:
                 repurchase_prob = self._get_repurchase_prob(user)
                 if random.random() < repurchase_prob:

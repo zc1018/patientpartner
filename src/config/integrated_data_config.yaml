@@ -412,3 +412,10 @@ user_churn_rate:
     90_day_retention: 0.36
     description: 首单用户：70%在首月流失，需要第一次体验优化
     monthly_churn: 0.55
+hospital_access_control:
+  restricted_hospitals:
+    - "协和医院"
+    - "301医院"
+    - "北医三院"
+  certification_required: true
+  restricted_penalty: 0.5

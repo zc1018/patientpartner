@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 class MatchingEngine:
     """匹配引擎 - 支持指定陪诊师优先匹配"""
 
+    # 限制医院列表（需要资质证书）
+    RESTRICTED_HOSPITALS = {"协和医院", "301医院", "北医三院"}
+    RESTRICTED_PENALTY = 0.5  # 无证陪诊师在限制医院的匹配成功率惩罚
+
     def __init__(self, config: SimulationConfig,
                  complaint_handler: Optional["ComplaintHandler"] = None,
                  geo_matcher: Optional["GeoMatcher"] = None):
@@ -127,6 +131,20 @@ class MatchingEngine:
             order.cancel_reason = "陪诊师全满"
             return None
 
+        # 接单意愿过滤：已达日收入目标的陪诊师有50%概率拒单
+        willing_candidates = []
+        for e in candidates:
+            if e.current_daily_income >= e.daily_income_target:
+                if random.random() < 0.5:
+                    continue  # 拒单
+            willing_candidates.append(e)
+
+        if not willing_candidates:
+            order.cancel_reason = "陪诊师全满"
+            return None
+
+        candidates = willing_candidates
+
         # 优先级1：指定陪诊师（复购率82%的关键杠杆）
         if order.user.has_designated_escort():
             self.match_statistics["designated_requests"] += 1
@@ -173,6 +191,12 @@ class MatchingEngine:
         # 检查状态
         if escort.status != EscortStatus.AVAILABLE:
             return False
+
+        # 医院准入检查：限制医院 + 无证 → 匹配成功率降低
+        target_hospital = order.user.target_hospital
+        if target_hospital in self.RESTRICTED_HOSPITALS and not escort.has_certification:
+            if random.random() > self.RESTRICTED_PENALTY:
+                return False
 
         return True
 
@@ -225,7 +249,9 @@ class MatchingEngine:
                 # 更新陪诊员数据
                 if order.escort:
                     order.escort.total_orders += 1
-                    order.escort.total_income += order.price * self.config.escort_commission
+                    earned = order.price * self.config.escort_commission
+                    order.escort.total_income += earned
+                    order.escort.current_daily_income += earned
                     # 更新陪诊员评分（简单平均）
                     order.escort.rating = (
                         (order.escort.rating * (order.escort.total_orders - 1) + order.rating)
@@ -236,6 +262,10 @@ class MatchingEngine:
 
                     # 更新用户历史陪诊师记录（新增）
                     order.user.add_history_escort(order.escort.id, order.rating)
+
+                    # 重置用户生命周期状态（修复 lifecycle_state 未重置 Bug）
+                    order.user.days_since_last_order = 0
+                    order.user.lifecycle_state = "active"
 
                 self.completed_orders.append(order)
                 # 内存保护：截断超出上限的旧记录

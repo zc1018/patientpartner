@@ -112,6 +112,13 @@ class Escort:
     # 流失风险评分 (0-1，越高越容易流失)
     churn_risk: float = 0.5
 
+    # 医院准入资质
+    has_certification: bool = False  # 是否持有陪诊资质证书
+
+    # 接单意愿相关
+    daily_income_target: float = 200.0  # 日收入目标
+    current_daily_income: float = 0.0   # 当日已获收入
+
     def __repr__(self):
         return f"Escort({self.id[:8]}, {self.status.value}, 订单:{self.total_orders}, 收入:{self.total_income:.0f})"
 
