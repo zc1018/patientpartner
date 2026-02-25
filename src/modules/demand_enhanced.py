@@ -48,6 +48,7 @@ class EnhancedDemandGenerator:
         self.config = config
         self.beijing_data = beijing_data
         self.repurchase_pool: Dict[str, User] = {}
+        self.conversion_rate_modifier: float = 1.0  # 投诉率影响的转化率修正系数
 
         random.seed(config.random_seed)
         np.random.seed(config.random_seed)
@@ -96,6 +97,10 @@ class EnhancedDemandGenerator:
                 if start <= hour <= end:
                     return float(factor)
         return float(self.hourly_demand_factors.get("other", 1.0))
+
+    def set_conversion_rate_modifier(self, modifier: float) -> None:
+        """设置转化率修正系数（由 complaint_handler 提供）"""
+        self.conversion_rate_modifier = max(0.5, min(1.0, modifier))
 
     def generate_daily_orders(self, day: int) -> List[Order]:
         """生成当日订单需求 - 多渠道"""
@@ -185,7 +190,8 @@ class EnhancedDemandGenerator:
 
         # 添加随机波动
         volatility = np.random.normal(0, 0.15)
-        order_count = int(exposure * click_rate * conversion_rate * (1 + volatility))
+        # 应用投诉率影响的转化率修正系数
+        order_count = int(exposure * click_rate * conversion_rate * self.conversion_rate_modifier * (1 + volatility))
         order_count = max(0, order_count)
 
         orders = []
@@ -210,7 +216,8 @@ class EnhancedDemandGenerator:
             click_rate = channel["click_rate"]
             conversion_rate = channel["conversion_rate"]
 
-            order_count = int(exposure * click_rate * conversion_rate)
+            # 应用投诉率影响的转化率修正系数
+            order_count = int(exposure * click_rate * conversion_rate * self.conversion_rate_modifier)
 
             for _ in range(order_count):
                 user = self._create_user_with_real_data(
@@ -233,7 +240,8 @@ class EnhancedDemandGenerator:
             click_rate = channel["click_rate"]
             conversion_rate = channel["conversion_rate"]
 
-            order_count = int(exposure * click_rate * conversion_rate)
+            # 应用投诉率影响的转化率修正系数
+            order_count = int(exposure * click_rate * conversion_rate * self.conversion_rate_modifier)
 
             for _ in range(order_count):
                 user = self._create_user_with_real_data(

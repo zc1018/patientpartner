@@ -53,16 +53,33 @@ class DemandGenerator:
         np.random.seed(config.random_seed)
 
     def _update_user_lifecycle_states(self) -> None:
-        """每天递增 days_since_last_order 并更新生命周期状态"""
+        """
+        每天更新用户生命周期状态（基于分层流失率）
+
+        分层流失率（来自 integrated_data_config.py）:
+        - 首单用户：月流失率 55%（日均约 1.83%）
+        - 2-3单用户：月流失率 25%（日均约 0.83%）
+        - 4单+老客：月流失率 10%（日均约 0.33%）
+        """
         for user in self.repurchase_pool.values():
             user.days_since_last_order += 1
-            if user.days_since_last_order > 90:
+
+            # 根据订单历史确定流失率
+            if user.total_orders == 1:
+                daily_churn_rate = 0.55 / 30  # 首单用户
+            elif user.total_orders <= 3:
+                daily_churn_rate = 0.25 / 30  # 2-3单用户
+            else:
+                daily_churn_rate = 0.10 / 30  # 老客
+
+            # 使用随机数判断是否流失
+            if random.random() < daily_churn_rate:
                 user.lifecycle_state = "churned"
             elif user.days_since_last_order > 30:
                 user.lifecycle_state = "at_risk"
 
     def _remove_churned_users(self) -> None:
-        """移除已流失用户（days_since_last_order > 90）"""
+        """移除已流失用户（lifecycle_state == 'churned'）"""
         churned = [uid for uid, u in self.repurchase_pool.items()
                    if u.lifecycle_state == "churned"]
         for uid in churned:

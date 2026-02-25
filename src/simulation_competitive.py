@@ -111,6 +111,10 @@ class CompetitiveSimulation:
         # 1. 更新供给状态
         self.supply_sim.daily_update(day)
 
+        # 1.5 传递投诉率修正系数给需求生成器
+        complaint_modifier = self.complaint_handler.get_conversion_rate_modifier()
+        self.demand_gen.set_conversion_rate_modifier(complaint_modifier)
+
         # 2. 生成需求（考虑竞争）
         base_orders = self.demand_gen.generate_daily_orders(day)
 
