@@ -8,7 +8,7 @@
 增强版匹配引擎 - 支持地理距离和时间约束
 """
 import random
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, TYPE_CHECKING
 from datetime import datetime, timedelta
 import numpy as np
 import math
@@ -17,13 +17,21 @@ from ..config.settings import SimulationConfig
 from ..config.beijing_real_data import BeijingRealDataConfig
 from ..models.entities import Order, Escort, OrderStatus, EscortStatus
 
+if TYPE_CHECKING:
+    from .complaint_handler import ComplaintHandler
+    from .geo_matcher import GeoMatcher
+
 
 class EnhancedMatchingEngine:
     """增强版匹配引擎 - 考虑地理距离和时间约束"""
 
-    def __init__(self, config: SimulationConfig, beijing_data: BeijingRealDataConfig):
+    def __init__(self, config: SimulationConfig, beijing_data: BeijingRealDataConfig,
+                 complaint_handler: Optional["ComplaintHandler"] = None,
+                 geo_matcher: Optional["GeoMatcher"] = None):
         self.config = config
         self.beijing_data = beijing_data
+        self.complaint_handler = complaint_handler
+        self.geo_matcher_external = geo_matcher
         self.waiting_queue: List[Order] = []
         self.serving_orders: List[Order] = []
         self.completed_orders: List[Order] = []
@@ -267,6 +275,13 @@ class EnhancedMatchingEngine:
                     order.escort.status = EscortStatus.AVAILABLE
                     order.escort.current_order_id = None
 
+                    # 更新用户历史陪诊师记录
+                    order.user.add_history_escort(order.escort.id, order.rating)
+
+                    # 重置用户生命周期状态（同步基础版修复）
+                    order.user.days_since_last_order = 0
+                    order.user.lifecycle_state = "active"
+
                 self.completed_orders.append(order)
                 # 内存保护：截断超出上限的旧记录
                 if len(self.completed_orders) > self._max_completed_records:
@@ -280,6 +295,16 @@ class EnhancedMatchingEngine:
                 if order.escort:
                     order.escort.status = EscortStatus.AVAILABLE
                     order.escort.current_order_id = None
+
+                # 触发投诉处理（集成 complaint_handler）
+                if self.complaint_handler:
+                    self.complaint_handler.generate_complaint(
+                        order_id=order.id,
+                        user_id=order.user.id,
+                        escort_id=order.escort.id if order.escort else None,
+                        order_price=order.price,
+                        day=day,
+                    )
 
                 self.failed_orders.append(order)
 

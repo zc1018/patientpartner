@@ -35,7 +35,6 @@ class CompetitiveSimulation:
         # 初始化模块
         self.demand_gen = EnhancedDemandGenerator(config, self.beijing_data)
         self.supply_sim = SupplySimulator(config)
-        self.matching_engine = EnhancedMatchingEngine(config, self.beijing_data)
         self.analytics = Analytics()
 
         # 竞争模拟器
@@ -49,6 +48,13 @@ class CompetitiveSimulation:
 
         # 地理位置匹配器
         self.geo_matcher = GeoMatcher()
+
+        # 匹配引擎（传入 complaint_handler 和 geo_matcher）
+        self.matching_engine = EnhancedMatchingEngine(
+            config, self.beijing_data,
+            complaint_handler=self.complaint_handler,
+            geo_matcher=self.geo_matcher
+        )
 
         # 政策风险事件生成器
         self.event_generator = EventGenerator(pd.DataFrame())

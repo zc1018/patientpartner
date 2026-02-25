@@ -2,7 +2,7 @@
 蒙特卡洛模拟模块 - 不确定性分析和置信区间计算
 """
 import numpy as np
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 import pandas as pd
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -19,10 +19,10 @@ class ParameterDistribution:
     name: str
     base_value: float
     distribution_type: str  # uniform/normal/triangular
-    min_value: float = None
-    max_value: float = None
-    std_dev: float = None
-    mode_value: float = None  # 用于三角分布
+    min_value: float = 0.0
+    max_value: float = 0.0
+    std_dev: float = 0.0
+    mode_value: float = 0.0  # 用于三角分布
 
 
 @dataclass
@@ -193,7 +193,7 @@ class MonteCarloSimulator:
 
         return mc_result
 
-    def _run_single_simulation(self, run_id: int) -> Dict:
+    def _run_single_simulation(self, run_id: int) -> Optional[Dict]:  # type: ignore[return]
         """运行单次模拟"""
         try:
             # 1. 采样参数
@@ -302,22 +302,22 @@ class MonteCarloSimulator:
         result = MonteCarloResult(
             parameter_name="all_parameters",
             runs=len(all_results),
-            gmv_mean=gmv_mean,
-            gmv_std=gmv_std,
-            gmv_ci_lower=gmv_ci_lower,
-            gmv_ci_upper=gmv_ci_upper,
-            net_profit_mean=np_mean,
-            net_profit_std=np_std,
-            net_profit_ci_lower=np_ci_lower,
-            net_profit_ci_upper=np_ci_upper,
-            market_share_mean=ms_mean,
-            market_share_std=ms_std,
-            market_share_ci_lower=ms_ci_lower,
-            market_share_ci_upper=ms_ci_upper,
-            completion_rate_mean=cr_mean,
-            completion_rate_std=cr_std,
-            completion_rate_ci_lower=cr_ci_lower,
-            completion_rate_ci_upper=cr_ci_upper,
+            gmv_mean=float(gmv_mean),
+            gmv_std=float(gmv_std),
+            gmv_ci_lower=float(gmv_ci_lower),
+            gmv_ci_upper=float(gmv_ci_upper),
+            net_profit_mean=float(np_mean),
+            net_profit_std=float(np_std),
+            net_profit_ci_lower=float(np_ci_lower),
+            net_profit_ci_upper=float(np_ci_upper),
+            market_share_mean=float(ms_mean),
+            market_share_std=float(ms_std),
+            market_share_ci_lower=float(ms_ci_lower),
+            market_share_ci_upper=float(ms_ci_upper),
+            completion_rate_mean=float(cr_mean),
+            completion_rate_std=float(cr_std),
+            completion_rate_ci_lower=float(cr_ci_lower),
+            completion_rate_ci_upper=float(cr_ci_upper),
             all_results=all_results
         )
 

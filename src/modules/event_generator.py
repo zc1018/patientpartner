@@ -301,8 +301,8 @@ class EventGenerator:
                            f"2）优化匹配算法，优先分配距离近的陪诊员；3）向用户发送等待提醒和优惠券。",
                 impact="负面",
                 metrics={
-                    "等待订单": peak_waiting,
-                    "平均等待": avg_waiting,
+                    "等待订单": float(peak_waiting),
+                    "平均等待": float(avg_waiting),
                 }
             ))
 
