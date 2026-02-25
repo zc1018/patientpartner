@@ -194,5 +194,9 @@ class Order:
     match_type: str = "normal"  # "designated"/"history"/"normal"
     is_designated_matched: bool = False  # 是否成功匹配指定陪诊师
 
+    # 拒单重匹配相关字段（新增）
+    match_attempts: int = 0  # 匹配尝试次数
+    rejected_escorts: List[str] = field(default_factory=list)  # 已拒单的陪诊员ID列表
+
     def __repr__(self):
         return f"Order({self.id[:8]}, {self.status.value}, ¥{self.price:.0f})"

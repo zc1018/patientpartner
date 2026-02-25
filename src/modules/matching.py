@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 class MatchingEngine:
     """匹配引擎 - 支持指定陪诊师优先匹配"""
 
+    # 最大匹配尝试次数（防止订单无限等待）
+    MAX_MATCH_ATTEMPTS = 10
+
     # 限制医院列表（需要资质证书）
     RESTRICTED_HOSPITALS = {
         # 综合三甲
@@ -76,8 +79,15 @@ class MatchingEngine:
     def _match_orders(self, available_escorts: List[Escort], day: int):
         """匹配订单与陪诊员"""
         matched_orders = []
+        failed_orders = []
 
         for order in self.waiting_queue:
+            # 检查是否超过最大匹配尝试次数
+            if order.match_attempts >= self.MAX_MATCH_ATTEMPTS:
+                order.cancel_reason = "超过最大匹配尝试次数"
+                failed_orders.append(order)
+                continue
+
             # 查找可用的陪诊员
             escort = self._find_best_escort(order, available_escorts)
 
@@ -114,6 +124,13 @@ class MatchingEngine:
         for order in matched_orders:
             self.waiting_queue.remove(order)
 
+        # 从等待队列移除匹配失败的订单（超过最大尝试次数）
+        for order in failed_orders:
+            if order in self.waiting_queue:
+                self.waiting_queue.remove(order)
+            order.status = OrderStatus.FAILED
+            self.failed_orders.append(order)
+
     def _find_best_escort(self, order: Order, available_escorts: List[Escort]) -> Optional[Escort]:
         """
         为订单找到最佳陪诊员 - 指定陪诊师优先匹配逻辑
@@ -139,17 +156,28 @@ class MatchingEngine:
             return None
 
         # 接单意愿过滤：使用 calculate_acceptance_willingness 方法
+        # 同时排除已拒单的陪诊员
+        candidates = [e for e in candidates if e.id not in order.rejected_escorts]
+
         willing_candidates = []
         for e in candidates:
             current_orders_today = self.daily_order_count.get(e.id, 0)
             willingness = e.calculate_acceptance_willingness(order.price, current_orders_today)
             if random.random() > willingness:
-                continue  # 陪诊员拒单
+                # 记录拒单信息，但订单保留等待其他陪诊员
+                order.rejected_escorts.append(e.id)
+                order.match_attempts += 1
+                continue
             willing_candidates.append(e)
 
         if not willing_candidates:
-            order.cancel_reason = "陪诊师全满"
-            return None
+            # 如果还有其他陪诊员可能稍后可用，保留订单
+            if len(order.rejected_escorts) < len(available_escorts):
+                order.cancel_reason = "等待其他陪诊师"
+                return None  # 保留在等待队列
+            else:
+                order.cancel_reason = "陪诊师全满"
+                return None
 
         candidates = willing_candidates
 

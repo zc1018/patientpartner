@@ -105,6 +105,33 @@ class MonteCarloSimulator:
                 max_value=0.20    # 上限20%（乐观估计）
             ),
 
+            # P0级关键参数 - 指定陪诊师复购率
+            ParameterDistribution(
+                name="designated_escort_repeat_rate",
+                base_value=0.82,  # 指定陪诊师复购率 82%
+                distribution_type="uniform",
+                min_value=0.75,   # 下限75%（保守估计）
+                max_value=0.88    # 上限88%（乐观估计）
+            ),
+
+            # P0级关键参数 - NPS评分
+            ParameterDistribution(
+                name="nps_score",
+                base_value=-0.225,  # NPS评分 -22.5%
+                distribution_type="uniform",
+                min_value=-0.30,    # 下限-30%（更差情况）
+                max_value=-0.15     # 上限-15%（改善情况）
+            ),
+
+            # P0级关键参数 - 投诉率
+            ParameterDistribution(
+                name="complaint_rate",
+                base_value=0.01,  # 投诉率 1%
+                distribution_type="uniform",
+                min_value=0.005,  # 下限0.5%（优秀服务水平）
+                max_value=0.03    # 上限3%（服务水平下降）
+            ),
+
             # 供给侧参数
             ParameterDistribution(
                 name="initial_escorts",
