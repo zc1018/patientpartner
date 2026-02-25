@@ -22,8 +22,15 @@ class MatchingEngine:
     """匹配引擎 - 支持指定陪诊师优先匹配"""
 
     # 限制医院列表（需要资质证书）
-    RESTRICTED_HOSPITALS = {"协和医院", "301医院", "北医三院"}
-    RESTRICTED_PENALTY = 0.5  # 无证陪诊师在限制医院的匹配成功率惩罚
+    RESTRICTED_HOSPITALS = {
+        # 综合三甲
+        "协和医院", "301医院", "北医三院", "人民医院", "北医一院",
+        # 专科三甲
+        "阜外医院", "安贞医院", "天坛医院", "宣武医院", "积水潭医院",
+        "肿瘤医院", "儿童医院", "妇产医院",
+        # 其他三甲
+        "朝阳医院", "友谊医院", "同仁医院", "中日友好医院", "北京医院",
+    }
 
     def __init__(self, config: SimulationConfig,
                  complaint_handler: Optional["ComplaintHandler"] = None,
@@ -100,7 +107,7 @@ class MatchingEngine:
                 matched_orders.append(order)
 
                 # 如果达到日接单上限，从可用列表移除
-                if self.daily_order_count[escort.id] >= self.config.daily_order_limit:
+                if self.daily_order_count[escort.id] >= self._get_daily_order_limit(escort):
                     available_escorts.remove(escort)
 
         # 从等待队列移除已匹配订单
@@ -123,7 +130,7 @@ class MatchingEngine:
         # 筛选有效候选（未达接单上限、状态可用）
         candidates = [
             e for e in available_escorts
-            if self.daily_order_count.get(e.id, 0) < self.config.daily_order_limit
+            if self.daily_order_count.get(e.id, 0) < self._get_daily_order_limit(e)
             and e.rating >= 4.0  # 评分达标
         ]
 
@@ -131,12 +138,13 @@ class MatchingEngine:
             order.cancel_reason = "陪诊师全满"
             return None
 
-        # 接单意愿过滤：已达日收入目标的陪诊师有50%概率拒单
+        # 接单意愿过滤：使用 calculate_acceptance_willingness 方法
         willing_candidates = []
         for e in candidates:
-            if e.current_daily_income >= e.daily_income_target:
-                if random.random() < 0.5:
-                    continue  # 拒单
+            current_orders_today = self.daily_order_count.get(e.id, 0)
+            willingness = e.calculate_acceptance_willingness(order.price, current_orders_today)
+            if random.random() > willingness:
+                continue  # 陪诊员拒单
             willing_candidates.append(e)
 
         if not willing_candidates:
@@ -171,6 +179,19 @@ class MatchingEngine:
         self.match_statistics["normal_matches"] += 1
         return self._normal_match(order, candidates)
 
+    def _get_daily_order_limit(self, escort: Escort) -> int:
+        """根据评分计算日接单上限"""
+        if escort.rating >= 4.9:
+            return 4
+        elif escort.rating >= 4.7:
+            return 3
+        elif escort.rating >= 4.5:
+            return 3
+        elif escort.rating >= 4.3:
+            return 2
+        else:
+            return 1
+
     def _get_escort_by_id(self, escort_id: str, candidates: List[Escort]) -> Optional[Escort]:
         """根据ID从候选列表中获取陪诊员"""
         for escort in candidates:
@@ -184,33 +205,35 @@ class MatchingEngine:
         if escort.rating < 4.0:
             return False
 
-        # 检查日接单上限
-        if self.daily_order_count.get(escort.id, 0) >= self.config.daily_order_limit:
+        # 检查日接单上限（根据评分动态计算）
+        if self.daily_order_count.get(escort.id, 0) >= self._get_daily_order_limit(escort):
             return False
 
         # 检查状态
         if escort.status != EscortStatus.AVAILABLE:
             return False
 
-        # 医院准入检查：限制医院 + 无证 → 匹配成功率降低
-        target_hospital = order.user.target_hospital
-        if target_hospital in self.RESTRICTED_HOSPITALS and not escort.has_certification:
-            if random.random() > self.RESTRICTED_PENALTY:
-                return False
+        # 限制医院：无证陪诊师完全无法进入
+        target_hospital = getattr(order.user, 'target_hospital', None)
+        if target_hospital and target_hospital in self.RESTRICTED_HOSPITALS:
+            if not escort.has_certification:
+                return False  # 无证陪诊师直接拒绝，不是50%惩罚
 
         return True
 
     def _normal_match(self, order: Order, candidates: List[Escort], max_distance_km: float = 15.0) -> Optional[Escort]:
         """普通匹配逻辑：地理位置优先 > 擅长医院 > 评分高"""
         # 如果有地理位置匹配器，优先使用距离最近的陪诊员
-        if self.geo_matcher:
-            result = self.geo_matcher.find_nearest_escort(order, candidates, max_distance_km=max_distance_km)
-            if result.escort:
-                if result.distance_km > max_distance_km:
-                    # 距离超限，订单匹配失败
-                    order.cancel_reason = "无附近陪诊师（距离超限）"
-                    return None
-                return result.escort
+        if self.geo_matcher and candidates:
+            try:
+                result = self.geo_matcher.find_nearest_escort(order, candidates, max_distance_km=max_distance_km)
+                if result and hasattr(result, 'escort') and result.escort:
+                    if hasattr(result, 'distance_km') and result.distance_km > max_distance_km:
+                        order.cancel_reason = "无附近陪诊师（距离超限）"
+                        return None
+                    return result.escort
+            except Exception:
+                pass  # 地理匹配失败时回退到普通匹配
 
         # 回退：擅长该医院 > 评分高
         specialized = [
@@ -252,11 +275,9 @@ class MatchingEngine:
                     earned = order.price * self.config.escort_commission
                     order.escort.total_income += earned
                     order.escort.current_daily_income += earned
-                    # 更新陪诊员评分（简单平均）
-                    order.escort.rating = (
-                        (order.escort.rating * (order.escort.total_orders - 1) + order.rating)
-                        / order.escort.total_orders
-                    )
+                    # 使用加权平均更新陪诊员评分（老评分90% + 新评分10%）
+                    if order.rating:
+                        order.escort.update_rating(order.rating)
                     order.escort.status = EscortStatus.AVAILABLE
                     order.escort.current_order_id = None
 

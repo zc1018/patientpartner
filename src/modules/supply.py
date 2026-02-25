@@ -27,9 +27,13 @@ class SupplySimulator:
     def _initialize_escorts(self):
         """初始化陪诊员池"""
         for _ in range(self.config.initial_escorts):
+            # 评分使用正态分布初始化
+            rating = float(np.clip(np.random.normal(4.5, 0.3), 3.5, 5.0))
             escort = Escort(
                 status=EscortStatus.TRAINING,
                 join_date=datetime.now(),
+                join_day=0,
+                rating=rating,
                 specialized_hospitals=random.sample(
                     self.config.covered_hospitals,
                     k=min(2, len(self.config.covered_hospitals))
@@ -69,9 +73,13 @@ class SupplySimulator:
         actual_recruit = int(self.config.weekly_recruit * decay)
 
         for _ in range(actual_recruit):
+            # 评分使用正态分布初始化
+            rating = float(np.clip(np.random.normal(4.5, 0.3), 3.5, 5.0))
             escort = Escort(
                 status=EscortStatus.TRAINING,
                 join_date=datetime.now(),
+                join_day=day,
+                rating=rating,
                 specialized_hospitals=random.sample(
                     self.config.covered_hospitals,
                     k=min(2, len(self.config.covered_hospitals))
@@ -92,7 +100,7 @@ class SupplySimulator:
         for escort in self.escorts.values():
             if escort.status == EscortStatus.TRAINING:
                 # 检查是否达到培训周期
-                days_since_join = day
+                days_since_join = day - escort.join_day
                 if days_since_join >= self.config.training_days:
                     # 判定是否通过培训
                     if random.random() < self.config.training_pass_rate:
@@ -103,15 +111,15 @@ class SupplySimulator:
                         escort.status = EscortStatus.CHURNED
 
     def get_income_tier(self, escort: Escort) -> str:
-        """获取陪诊师收入分层"""
+        """获取陪诊师收入分层（按日收入）"""
         if escort.total_orders == 0:
             return "low_income"
-        # 估算月收入（假设每单平均200元x70%分成）
+        # 计算日均收入
         avg_income_per_order = escort.total_income / max(1, escort.total_orders)
-        monthly_income = avg_income_per_order * min(escort.total_orders, 30) * 0.7
-        if monthly_income >= 7000:
+        daily_income = avg_income_per_order * min(escort.total_orders, 3)  # 假设日均最多3单
+        if daily_income > 300:
             return "high_income"
-        elif monthly_income >= 5000:
+        elif daily_income >= 150:
             return "medium_income"
         else:
             return "low_income"
@@ -120,9 +128,9 @@ class SupplySimulator:
         """处理陪诊员流失（基于收入分层）"""
         # 收入分层流失率
         churn_rate_by_tier = {
-            "high_income": 0.05,   # 高收入：5%/月
-            "medium_income": 0.10, # 中收入：10%/月
-            "low_income": 0.20,    # 低收入：20%/月
+            "high_income": 0.08,   # 高收入：8%/月
+            "medium_income": 0.15, # 中收入：15%/月
+            "low_income": 0.25,    # 低收入：25%/月
         }
 
         available_escorts = [

@@ -119,8 +119,41 @@ class Escort:
     daily_income_target: float = 200.0  # 日收入目标
     current_daily_income: float = 0.0   # 当日已获收入
 
+    # 加入的模拟天数（用于培训期计算）
+    join_day: int = 0
+
     def __repr__(self):
         return f"Escort({self.id[:8]}, {self.status.value}, 订单:{self.total_orders}, 收入:{self.total_income:.0f})"
+
+    def calculate_acceptance_willingness(self, order_price: float, current_orders_today: int) -> float:
+        """计算接单意愿(0-1)：收入达标因素 * 价格因素 * 疲劳因素"""
+        # 1. 收入达标因素
+        if self.current_daily_income >= self.daily_income_target * 1.5:
+            income_factor = 0.2
+        elif self.current_daily_income >= self.daily_income_target:
+            income_factor = 0.5
+        else:
+            income_factor = 0.9
+
+        # 2. 价格因素（挑单行为）
+        if order_price >= 300:
+            price_factor = 1.2
+        elif order_price < 200:
+            price_factor = 0.7
+        else:
+            price_factor = 1.0
+
+        # 3. 疲劳因素
+        fatigue_factor = max(0.5, 1.0 - current_orders_today * 0.2)
+
+        return min(1.0, income_factor * price_factor * fatigue_factor)
+
+    def update_rating(self, user_rating: float) -> None:
+        """加权平均更新评分：老评分90% + 新评分10%"""
+        if self.total_orders == 0:
+            self.rating = user_rating
+        else:
+            self.rating = round(self.rating * 0.9 + user_rating * 0.1, 2)
 
     def update_churn_risk(self):
         """更新流失风险（收入越高、订单越多，流失风险越低）"""

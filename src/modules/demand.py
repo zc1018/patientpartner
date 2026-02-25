@@ -17,9 +17,9 @@ from .geo_matcher import GeoMatcher
 
 # 年龄分层行为差异模型（从 user_behavior_agent 导入）
 AGE_BEHAVIOR = {
-    "60-70": {"children_purchase_rate": 0.4, "price_sensitivity": 0.6, "is_app_capable": True},
-    "70-80": {"children_purchase_rate": 0.7, "price_sensitivity": 0.7, "is_app_capable": True},
-    "80+":   {"children_purchase_rate": 0.9, "price_sensitivity": 0.5, "is_app_capable": False},
+    "60-70": {"children_purchase_rate": 0.4, "price_sensitivity": 0.6, "is_app_capable": True,  "repurchase_cycle_days": 180},
+    "70-80": {"children_purchase_rate": 0.7, "price_sensitivity": 0.7, "is_app_capable": True,  "repurchase_cycle_days": 90},
+    "80+":   {"children_purchase_rate": 0.9, "price_sensitivity": 0.5, "is_app_capable": False, "repurchase_cycle_days": 45},
 }
 
 
@@ -52,6 +52,22 @@ class DemandGenerator:
         random.seed(config.random_seed)
         np.random.seed(config.random_seed)
 
+    def _update_user_lifecycle_states(self) -> None:
+        """每天递增 days_since_last_order 并更新生命周期状态"""
+        for user in self.repurchase_pool.values():
+            user.days_since_last_order += 1
+            if user.days_since_last_order > 90:
+                user.lifecycle_state = "churned"
+            elif user.days_since_last_order > 30:
+                user.lifecycle_state = "at_risk"
+
+    def _remove_churned_users(self) -> None:
+        """移除已流失用户（days_since_last_order > 90）"""
+        churned = [uid for uid, u in self.repurchase_pool.items()
+                   if u.lifecycle_state == "churned"]
+        for uid in churned:
+            del self.repurchase_pool[uid]
+
     def set_conversion_rate_modifier(self, modifier: float):
         """设置转化率修正系数（由 complaint_handler 提供）"""
         self.conversion_rate_modifier = max(0.5, min(1.0, modifier))
@@ -62,6 +78,10 @@ class DemandGenerator:
 
     def generate_daily_orders(self, day: int) -> List[Order]:
         """生成当日订单需求"""
+        # 更新用户生命周期状态（每日）
+        self._update_user_lifecycle_states()
+        self._remove_churned_users()
+
         base_orders = self._calculate_base_demand()
 
         # 价格弹性调整：价格高于基准时需求下降
@@ -71,16 +91,18 @@ class DemandGenerator:
         demand_adjustment = 1 + price_elasticity * price_change_pct
         base_orders = base_orders * max(0.3, demand_adjustment)
 
-        # 周内差异（周末需求下降20%）
+        # 周内差异 vs 月末效应（互斥，周末优先）
         day_of_week = day % 7
-        weekend_factor = 0.8 if day_of_week in [5, 6] else 1.0
-
-        # 月内差异（月末就医高峰+15%）
         day_of_month = (day % 30) + 1
-        month_end_factor = 1.15 if day_of_month >= 25 else 1.0
+        if day_of_week in [5, 6]:
+            time_factor = 0.8   # 周末需求下降20%
+        elif day_of_month >= 25:
+            time_factor = 1.15  # 月末就医高峰+15%
+        else:
+            time_factor = 1.0
 
         # 应用系数到订单数量
-        base_orders = base_orders * weekend_factor * month_end_factor
+        base_orders = base_orders * time_factor
 
         actual_orders = self._apply_volatility(base_orders)
         new_orders = self._generate_new_user_orders(actual_orders, day)
@@ -115,16 +137,22 @@ class DemandGenerator:
         return orders
 
     def _generate_repurchase_orders(self, day: int) -> List[Order]:
-        """生成复购订单 - 基于用户分层的差异化复购率"""
+        """生成复购订单 - 基于用户年龄分层的差异化复购周期"""
         orders = []
         for _, user in list(self.repurchase_pool.items()):
-            if day % self.config.repurchase_cycle_days == 0:
-                repurchase_prob = self._get_repurchase_prob(user)
-                if random.random() < repurchase_prob:
-                    user.is_repurchase = True
-                    user.total_orders += 1
-                    order = self._create_order(user, day)
-                    orders.append(order)
+            # 根据年龄获取复购周期
+            age_group = _get_age_group(user.age)
+            cycle = AGE_BEHAVIOR[age_group].get("repurchase_cycle_days", 30)
+            if user.days_since_last_order < cycle:
+                continue
+            repurchase_prob = self._get_repurchase_prob(user)
+            if random.random() < repurchase_prob:
+                user.is_repurchase = True
+                user.total_orders += 1
+                user.days_since_last_order = 0
+                user.lifecycle_state = "active"
+                order = self._create_order(user, day)
+                orders.append(order)
         return orders
 
     def _get_repurchase_prob(self, user: User) -> float:
@@ -194,5 +222,7 @@ class DemandGenerator:
         )
 
     def add_to_repurchase_pool(self, user: User):
-        """将用户加入复购池"""
+        """将用户加入复购池并重置生命周期状态"""
+        user.days_since_last_order = 0
+        user.lifecycle_state = "active"
         self.repurchase_pool[user.id] = user

@@ -145,6 +145,9 @@ class CompetitionSimulator:
     def simulate_competition(self, day: int, our_orders: int, our_avg_price: float, our_avg_rating: float):
         """模拟竞争 - 更新市场份额"""
 
+        # 0. 差异化竞争策略
+        self._simulate_differentiated_strategies(day)
+
         # 1. 更新我们的数据
         didi = self.competitors["滴滴陪诊"]
         didi.total_orders += our_orders
@@ -166,6 +169,29 @@ class CompetitionSimulator:
 
         # 6. 模拟价格战（如果有竞品采取激进策略）
         self._simulate_price_war(day)
+
+    def _simulate_differentiated_strategies(self, day: int) -> None:
+        """差异化竞争策略：各竞争对手有不同的竞争行为"""
+        for name, competitor in self.competitors.items():
+            if "医院" in name or "自营" in name:
+                # 医院自营：每月提升服务质量，不降价
+                if day % 30 == 0:
+                    competitor.service_quality = min(0.95, competitor.service_quality + 0.01)
+
+            elif "个人" in name or "微信" in name:
+                # 个人陪诊师：价格战，当价格>滴滴70%时降价5%
+                didi_competitor = next(
+                    (c for n, c in self.competitors.items() if "滴滴" in n), None
+                )
+                if didi_competitor and competitor.avg_price > didi_competitor.avg_price * 0.7:
+                    competitor.avg_price = max(100, competitor.avg_price * 0.95)
+
+            elif "其他" in name or "平台" in name:
+                # 其他平台：跟随策略，价格=市场均价x0.95
+                prices = [c.avg_price for c in self.competitors.values() if hasattr(c, 'avg_price')]
+                if prices:
+                    avg_price = sum(prices) / len(prices)
+                    competitor.avg_price = avg_price * 0.95
 
     def _simulate_competitor_operations(self, day: int):
         """模拟竞品的运营数据"""
