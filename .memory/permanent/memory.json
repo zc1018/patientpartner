@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "created_at": "2026-02-26",
+  "user": {
+    "name": "百万",
+    "role": "产品经理/业务负责人",
+    "project": "滴滴陪诊业务沙箱模拟系统",
+    "domain": "医疗健康 + 出行服务 + 共享经济",
+    "expertise": ["业务建模", "数据分析", "GMV预测", "运营策略"]
+  },
+  "project": {
+    "name": "patientpartner",
+    "description": "滴滴陪诊业务沙箱模拟环境",
+    "github": "https://github.com/zc1018/patientpartner",
+    "core_value": "基于真实行业数据修正的业务模拟，支持运营决策",
+    "key_metrics": {
+      "首单复购率": "13.5% (修正后)",
+      "30天留存率": "45%",
+      "NPS评分": "-22.5%"
+    }
+  },
+  "rules": {
+    "language": "中文",
+    "address": "百万",
+    "code_comments": "中文优先",
+    "commits": "中文提交信息",
+    "priority": [
+      "数据准确性 > 代码优雅",
+      "业务逻辑正确 > 性能优化",
+      "可维护性 > 功能数量"
+    ]
+  },
+  "preferences": {
+    "communication": "简洁直接，避免过度寒暄",
+    "code_style": "务实优先，避免过度工程化",
+    "review_mode": "多轮审查 + 修复循环",
+    "team_work": "愿意使用Agent团队并行处理复杂任务"
+  },
+  "history": [
+    {"date": "2026-02-26", "event": "完成四轮Agent团队审查，修复8个关键问题，代码推送到GitHub"}
+  ]
+}

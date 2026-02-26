@@ -1,0 +1,48 @@
+{
+  "experiences": [
+    {
+      "id": "EXP-001",
+      "category": "Python陷阱",
+      "title": "方法重复定义静默覆盖",
+      "description": "Python类中定义同名方法时，后面的定义会静默覆盖前面的，不会报错。这导致demand.py中142-278行的重复方法覆盖了之前带有conversion_rate_modifier的正确版本。",
+      "symptom": "投诉率影响失效、地理位置分配缺失、功能异常",
+      "solution": "1. 使用grep检查重复方法定义 2. 定期运行git diff查看新增代码 3. 代码审查时重点关注方法名唯一性",
+      "severity": "P0",
+      "date": "2026-02-26",
+      "files": ["src/modules/demand.py"]
+    },
+    {
+      "id": "EXP-002",
+      "category": "架构设计",
+      "title": "模板方法模式提高代码复用",
+      "description": "使用BaseSimulation抽象基类定义模板方法，Simulation继承实现钩子方法，使90%代码复用，10%定制逻辑。",
+      "benefits": ["代码结构清晰", "易于扩展", "减少重复"],
+      "date": "2026-02-26",
+      "files": ["src/simulation/base.py", "src/simulation/simulation.py"]
+    },
+    {
+      "id": "EXP-003",
+      "category": "Agent协作",
+      "title": "多Agent并行审查需注意任务边界",
+      "description": "并行启动多个审查Agent时，如果没有清晰的任务边界，可能导致审查遗漏或重复。",
+      "solution": "使用TaskCreate创建明确的任务列表，每个Agent负责1-2个具体任务，通过SendMessage汇总结果",
+      "date": "2026-02-26"
+    },
+    {
+      "id": "EXP-004",
+      "category": "时序问题",
+      "title": "_current_day初始化时机错误",
+      "description": "在_update_repurchase_pool中使用_current_day，但该值在_record_daily_metrics中才被设置，导致第一天使用错误的day值。",
+      "solution": "将_current_day = day移至_process_matching中，确保在_update_repurchase_pool之前设置",
+      "date": "2026-02-26"
+    },
+    {
+      "id": "EXP-005",
+      "category": "配置管理",
+      "title": "关键参数应集中管理避免硬编码",
+      "description": "留存率参数（30d=45%、90d=36%）硬编码在analytics.py中，违反配置集中管理原则。",
+      "solution": "将所有业务参数移至settings.py，模块从config读取，便于蒙特卡洛分析和参数调整",
+      "date": "2026-02-26"
+    }
+  ]
+}
