@@ -20,5 +20,8 @@ output/
 .agent/
 .claude/
 
+# 但允许提交 skills
+!.claude/skills/
+
 # 临时文件
 *.resolved
