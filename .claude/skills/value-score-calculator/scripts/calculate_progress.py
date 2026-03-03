@@ -116,6 +116,44 @@ def interpret_progress(progress: Optional[float]) -> str:
         return "🔴 退步"
 
 
+def convert_score_to_value(total_progress: Optional[float]) -> float:
+    """
+    将总进度换算为Q3月价值分（线性映射规则）
+
+    公式: 换算 = 8 + max(总进度, 0) × 2
+    - 保底8分（负数或无数据）
+    - 线性映射0%-100%到8-10分
+    - 封顶10分（超过100%按100%算）
+
+    Args:
+        total_progress: 总进度值（小数形式，如0.5表示50%）
+
+    Returns:
+        换算后的价值分（8.0-10.0）
+
+    Examples:
+        >>> convert_score_to_value(1.0)   # 100% -> 10.0
+        >>> convert_score_to_value(0.5)   # 50% -> 9.0
+        >>> convert_score_to_value(0.0)   # 0% -> 8.0
+        >>> convert_score_to_value(-0.5)  # -50% -> 8.0 (保底)
+        >>> convert_score_to_value(None)  # 无数据 -> 8.0 (保底)
+    """
+    if total_progress is None or pd.isna(total_progress):
+        return 8.0
+
+    # 负数进度保底8分
+    if total_progress < 0:
+        return 8.0
+
+    # 超过100%按100%算
+    effective_progress = min(total_progress, 1.0)
+
+    # 线性映射: 8 + 进度 × 2
+    converted = 8 + effective_progress * 2
+
+    return round(converted, 1)
+
+
 if __name__ == "__main__":
     # 测试示例
     print("=== 进度计算测试 ===")
@@ -135,3 +173,23 @@ if __name__ == "__main__":
     # 示例4: 总进度
     total = calculate_total_progress(p1, p2, p3)
     print(f"总进度 = {format_progress_as_percentage(total)}")
+
+    print("\n=== 换算规则测试 ===")
+
+    # 换算测试
+    test_cases = [
+        (1.0, "100%"),
+        (0.933, "93.3% (慧学系统)"),
+        (0.75, "75%"),
+        (0.5, "50%"),
+        (0.473, "47.3% (哪吒系统)"),
+        (0.25, "25%"),
+        (0.0, "0%"),
+        (-0.943, "-94.3% (慧刷题)"),
+        (None, "无数据"),
+    ]
+
+    for progress, desc in test_cases:
+        converted = convert_score_to_value(progress)
+        progress_str = f"{progress*100:.1f}%" if progress is not None else "N/A"
+        print(f"{desc}: 进度={progress_str} -> 换算={converted:.1f}")
